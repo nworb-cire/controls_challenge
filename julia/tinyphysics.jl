@@ -7,6 +7,7 @@ using Dates
 using Statistics
 using Printf
 using NNlib: softmax
+using MD5
 
 const ACC_G = 9.81
 const FPS = 10
@@ -122,6 +123,8 @@ mutable struct TinyPhysicsSimulator
         target_lataccel_history = [x[2] for x in state_target_futureplans]
         target_future = nothing
         current_lataccel = current_lataccel_history[end]
+        seed = parse(Int, bytes2hex(md5(data_path))[24:end], base = 16) % 10^4
+        Random.seed!(seed)
         new(data_path, model, data, controller, debug, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, target_future, current_lataccel)
     end
 end
