@@ -184,16 +184,6 @@ function step(sim::TinyPhysicsSimulator)
     sim.step_idx += 1
 end
 
-function plot_data(sim::TinyPhysicsSimulator, ax, lines, axis_labels, title)
-    ax.plot(1:length(lines[1][1]), lines[1][1], label=lines[1][2])
-    ax.plot(1:length(lines[2][1]), lines[2][1], label=lines[2][2])
-    ax.axvline(x=CONTROL_START_IDX, color="black", linestyle="--", alpha=0.5, label="Control Start")
-    ax.legend()
-    ax.set_title(@sprintf("%s | Step: %d", title, sim.step_idx))
-    ax.set_xlabel(axis_labels[1])
-    ax.set_ylabel(axis_labels[2])
-end
-
 function compute_cost(sim::TinyPhysicsSimulator)
     target = sim.target_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
     pred = sim.current_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
