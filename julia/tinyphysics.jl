@@ -47,7 +47,7 @@ end
 
 function encode(tokenizer::LataccelTokenizer, value::Union{Float64, Vector{Float64}})
     value = clip(tokenizer, value)
-    digitized = digitize(tokenizer.bins, value, right=true)
+    digitized = searchsortedlast.(Ref(tokenizer.bins), value)
     return digitized
 end
 
@@ -71,15 +71,22 @@ struct TinyPhysicsModel
     end
 end
 
-function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, N}} where {T, N}; temperature=1.0)
-    println(input_data["states"][1, end, :]...)
+function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, 3} where T}; temperature=1.0)
 #     res = ort.run(model.ort_session, [input_data])[1]
-    res = rand(1:VOCAB_SIZE, 1, 1, 1)
-    probs = softmax(model, res ./ temperature, axis=-1)
+    res = rand(1:VOCAB_SIZE, (1, 1, VOCAB_SIZE))
+    probs = softmax(res ./ temperature; dims=size(res, 3))
     @assert size(probs, 1) == 1
     @assert size(probs, 3) == VOCAB_SIZE
-    sample = rand(1:VOCAB_SIZE, weights=probs[1, end, :])
-    return sample
+    weights = Weights(probs[1, 1, :])
+    return sample(1:VOCAB_SIZE, weights)
+end
+
+function get_current_lataccel(model::TinyPhysicsModel, sim_states::Vector{State}, actions::Vector{Float64}, past_preds::Vector{Float64})
+    tokenized_actions = encode(model.tokenizer, past_preds)
+    raw_states::Matrix{Float64} = hcat([getfield.(sim_states, field) for field in fieldnames(State)]...)
+    states = hcat(actions, raw_states)
+    input_data = Dict("states" => reshape(states, 1, 1, length(states)), "tokens" => reshape(tokenized_actions, 1, 1, length(tokenized_actions)))
+    return decode(model.tokenizer, predict(model, input_data))
 end
 
 abstract type BaseController end
