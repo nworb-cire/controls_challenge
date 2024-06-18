@@ -8,6 +8,7 @@ using Statistics
 using Printf
 using NNlib: softmax
 using MD5
+using Plots
 
 const ACC_G = 9.81
 const FPS = 10
@@ -129,19 +130,6 @@ mutable struct TinyPhysicsSimulator
     end
 end
 
-function reset(sim::TinyPhysicsSimulator)
-    sim.step_idx = CONTEXT_LENGTH
-    state_target_futureplans = [get_state_target_futureplan(sim.data, i) for i in 1:sim.step_idx]
-    sim.state_history = [x[1] for x in state_target_futureplans]
-    sim.action_history = sim.data.steer_command[1:sim.step_idx]
-    sim.current_lataccel_history = [x[2] for x in state_target_futureplans]
-    sim.target_lataccel_history = [x[2] for x in state_target_futureplans]
-    sim.target_future = nothing
-    sim.current_lataccel = sim.current_lataccel_history[end]
-    seed = parse(Int, md5(sim.data_path))
-    Random.seed!(seed)
-end
-
 function get_data(data_path::String)
     df = CSV.read(data_path, DataFrame)
     processed_df = DataFrame(
@@ -217,26 +205,43 @@ function compute_cost(sim::TinyPhysicsSimulator)
 end
 
 function rollout(sim::TinyPhysicsSimulator)
-    if sim.debug
-        plt.ion()
-        fig, axs = plt.subplots(4, figsize=(12, 14), constrained_layout=true)
-    end
-
     for _ in CONTEXT_LENGTH:size(sim.data, 1)
         step(sim)
         if sim.debug && sim.step_idx % 10 == 0
             @printf("Step %5d: Current lataccel: %6.2f, Target lataccel: %6.2f\n", sim.step_idx, sim.current_lataccel, sim.target_lataccel_history[end])
-            plot_data(sim, axs[1], [(sim.target_lataccel_history, "Target lataccel"), (sim.current_lataccel_history, "Current lataccel")], ["Step", "Lateral Acceleration"], "Lateral Acceleration")
-            plot_data(sim, axs[2], [(sim.action_history, "Action")], ["Step", "Action"], "Action")
-            plot_data(sim, axs[3], [(getindex.(sim.state_history, 1), "Roll Lateral Acceleration")], ["Step", "Lateral Accel due to Road Roll"], "Lateral Accel due to Road Roll")
-            plot_data(sim, axs[4], [(getindex.(sim.state_history, 2), "v_ego")], ["Step", "v_ego"], "v_ego")
-            plt.pause(0.01)
+            p1 = plot(
+                [sim.target_lataccel_history, sim.current_lataccel_history],
+                label=["Target lataccel" "Current lataccel"],
+                xlabel="Step",
+                ylabel="Lateral Acceleration",
+                title="Lateral Acceleration"
+            )
+            p2 = plot(
+                [sim.action_history],
+                label=["Action"],
+                xlabel="Step",
+                ylabel="Action",
+                title="Action"
+            )
+            p3 = plot(
+                [[state.roll_lataccel for state in sim.state_history]],
+                label=["Roll Lateral Acceleration"],
+                xlabel="Step",
+                ylabel="Lateral Accel due to Road Roll",
+                title="Lateral Accel due to Road Roll"
+            )
+            p4 = plot(
+                [[state.v_ego for state in sim.state_history]],
+                label=["v_ego"],
+                xlabel="Step",
+                ylabel="v_ego",
+                title="v_ego"
+            )
+            for pl in [p1, p2, p3, p4]
+                vline!(pl, [CONTROL_START_IDX], label="Control Start", color="black", linestyle=:dash)
+            end
+            plot(p1, p2, p3, p4, layout=(4, 1)) |> display
         end
-    end
-
-    if sim.debug
-        plt.ioff()
-        plt.show()
     end
 
     return compute_cost(sim)
@@ -279,7 +284,8 @@ function main()
             arg_type=Int
         "--debug" 
             help="Enable debug mode" 
-            action="store_true"
+            # action=:store_true
+            default=true
         "--controller" 
             help="Type of controller" 
             # choices=available_controllers 
