@@ -173,11 +173,12 @@ end
 
 function get_state_target_futureplan(data::DataFrame, step_idx::Int)
     state = data[step_idx, :]
+    upper_idx = min(step_idx + FUTURE_PLAN_STEPS, size(data, 1))
     futureplan = FuturePlan(
-        data.target_lataccel[step_idx+1:step_idx+FUTURE_PLAN_STEPS],
-        data.roll_lataccel[step_idx+1:step_idx+FUTURE_PLAN_STEPS],
-        data.v_ego[step_idx+1:step_idx+FUTURE_PLAN_STEPS],
-        data.a_ego[step_idx+1:step_idx+FUTURE_PLAN_STEPS]
+        data.target_lataccel[step_idx+1:upper_idx],
+        data.roll_lataccel[step_idx+1:upper_idx],
+        data.v_ego[step_idx+1:upper_idx],
+        data.a_ego[step_idx+1:upper_idx]
     )
     return State(state.roll_lataccel, state.v_ego, state.a_ego), state.target_lataccel, futureplan
 end
