@@ -6,6 +6,7 @@ using StatsBase
 using Dates
 using Statistics
 using Printf
+using NNlib: softmax
 
 const ACC_G = 9.81
 const FPS = 10
@@ -68,11 +69,6 @@ struct TinyPhysicsModel
         # ort_session = ort.InferenceSession(model_path)
         new(tokenizer, debug)
     end
-end
-
-function softmax(model::TinyPhysicsModel, x::Array{T, 2} where T; axis=-1)
-    e_x = exp.(x .- maximum(x, dims=axis, keepdims=true))
-    return e_x ./ sum(e_x, dims=axis, keepdims=true)
 end
 
 function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, N}} where {T, N}; temperature=1.0)
@@ -200,8 +196,6 @@ function plot_data(sim::TinyPhysicsSimulator, ax, lines, axis_labels, title)
 end
 
 function compute_cost(sim::TinyPhysicsSimulator)
-    @show size(sim.target_lataccel_history)
-    @show sim.target_lataccel_history
     target = sim.target_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
     pred = sim.current_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
 
