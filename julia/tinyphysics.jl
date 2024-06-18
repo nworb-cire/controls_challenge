@@ -44,15 +44,6 @@ struct LataccelTokenizer
     end
 end
 
-abstract type BaseController end
-
-struct ZeroController <: BaseController
-end
-
-function update(controller::ZeroController, target_lataccel::Float64, current_lataccel::Float64, state::State, futureplan::FuturePlan)
-    return 0.0
-end
-
 function encode(tokenizer::LataccelTokenizer, value::Union{Float64, Vector{Float64}})
     value = clip(tokenizer, value)
     digitized = digitize(tokenizer.bins, value, right=true)
@@ -93,6 +84,15 @@ function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, N}} 
     @assert size(probs, 3) == VOCAB_SIZE
     sample = rand(1:VOCAB_SIZE, weights=probs[1, end, :])
     return sample
+end
+
+abstract type BaseController end
+
+struct ZeroController <: BaseController
+end
+
+function update(controller::ZeroController, target_lataccel::Float64, current_lataccel::Float64, state::State, futureplan::FuturePlan)
+    return 0.0
 end
 
 mutable struct TinyPhysicsSimulator
@@ -160,7 +160,7 @@ function sim_step(sim::TinyPhysicsSimulator, step_idx::Int)
 end
 
 function control_step(sim::TinyPhysicsSimulator, step_idx::Int)
-    action = update(sim.controller, sim.target_lataccel_history[step_idx], sim.current_lataccel, sim.state_history[step_idx], sim.futureplan)
+    action = update(sim.controller, sim.target_lataccel_history[step_idx], sim.current_lataccel, sim.state_history[step_idx], sim.target_future)
     if step_idx < CONTROL_START_IDX
         action = sim.data.steer_command[step_idx]
     end
@@ -200,6 +200,8 @@ function plot_data(sim::TinyPhysicsSimulator, ax, lines, axis_labels, title)
 end
 
 function compute_cost(sim::TinyPhysicsSimulator)
+    @show size(sim.target_lataccel_history)
+    @show sim.target_lataccel_history
     target = sim.target_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
     pred = sim.current_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
 
@@ -213,19 +215,21 @@ function rollout(sim::TinyPhysicsSimulator)
     if sim.debug
         plt.ion()
         fig, axs = plt.subplots(4, figsize=(12, 14), constrained_layout=true)
+    end
 
-        for _ in CONTEXT_LENGTH:length(sim.data)
-            step(sim)
-            if sim.step_idx % 10 == 0
-                @printf("Step %5d: Current lataccel: %6.2f, Target lataccel: %6.2f\n", sim.step_idx, sim.current_lataccel, sim.target_lataccel_history[end])
-                plot_data(sim, axs[1], [(sim.target_lataccel_history, "Target lataccel"), (sim.current_lataccel_history, "Current lataccel")], ["Step", "Lateral Acceleration"], "Lateral Acceleration")
-                plot_data(sim, axs[2], [(sim.action_history, "Action")], ["Step", "Action"], "Action")
-                plot_data(sim, axs[3], [(getindex.(sim.state_history, 1), "Roll Lateral Acceleration")], ["Step", "Lateral Accel due to Road Roll"], "Lateral Accel due to Road Roll")
-                plot_data(sim, axs[4], [(getindex.(sim.state_history, 2), "v_ego")], ["Step", "v_ego"], "v_ego")
-                plt.pause(0.01)
-            end
+    for _ in CONTEXT_LENGTH:size(sim.data, 1)
+        step(sim)
+        if sim.debug && sim.step_idx % 10 == 0
+            @printf("Step %5d: Current lataccel: %6.2f, Target lataccel: %6.2f\n", sim.step_idx, sim.current_lataccel, sim.target_lataccel_history[end])
+            plot_data(sim, axs[1], [(sim.target_lataccel_history, "Target lataccel"), (sim.current_lataccel_history, "Current lataccel")], ["Step", "Lateral Acceleration"], "Lateral Acceleration")
+            plot_data(sim, axs[2], [(sim.action_history, "Action")], ["Step", "Action"], "Action")
+            plot_data(sim, axs[3], [(getindex.(sim.state_history, 1), "Roll Lateral Acceleration")], ["Step", "Lateral Accel due to Road Roll"], "Lateral Accel due to Road Roll")
+            plot_data(sim, axs[4], [(getindex.(sim.state_history, 2), "v_ego")], ["Step", "v_ego"], "v_ego")
+            plt.pause(0.01)
         end
+    end
 
+    if sim.debug
         plt.ioff()
         plt.show()
     end
