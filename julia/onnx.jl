@@ -2,8 +2,20 @@ import ONNX
 
 include("./onnx_ops.jl")
 
-b = 314
-A = rand(Float32, b, 20, 4);
-B = rand(1:30, b, 20);
+b = 3
+# A = zeros(Float32, b, 20, 4);
+# B = zeros(Int64, b, 20);
 
-model = ONNX.load(open("models/tmp_tinyphysics_extracted.onnx"), A, B)
+# ONNX.jl requires the dimensions to be reversed from how python onnxruntime does it
+A = zeros(Float32, 4, 20, b);
+B = zeros(Int64, 20, b);
+
+tape = ONNX.load(open("models/tmp_tinyphysics_extracted.onnx"), A, B)
+model = ONNX.compile(tape)
+outputs = model(A, B)
+if !isa(outputs, Tuple)
+    outputs = (outputs,)
+end
+for (i, o) in enumerate(outputs)
+    println("Output $i: $(size(o))")
+end

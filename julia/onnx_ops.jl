@@ -42,6 +42,11 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, 
     dims = Tuple(vec(tape[args[2]].val))
     # replace -1 with :
     dims = map(x -> x == -1 ? Colon() : x, dims)
+    if length(dims) == 2
+        dims = (dims[2], dims[1])
+    elseif length(dims) > 2
+        dims = (dims[2], dims[1], dims[3:end]...)
+    end
     return push_call!(tape, reshape, tape[args[1]].val, dims)
 end
 
@@ -63,41 +68,4 @@ end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Div}, args::VarVec, attrs::AttrDict)
     return push_call!(tape, broadcast, /, tape[args[1]].val, tape[args[2]].val)
-end
-
-# function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
-#     A_ndims = ndims(args[1]._op.val)
-#     B_ndims = ndims(args[2]._op.val)
-#     @show size(args[1]._op.val), size(args[2]._op.val)
-#     if A_ndims == 2 && B_ndims == 2
-#         return push_call!(tape, *, args[2], args[1])
-#     # elseif A_ndims == 3 && B_ndims in (2, 3)
-#     #     # batch is first, but it should be last
-#     #     permute = push_call!(tape, permutedims, args[1], (3, 2, 1))
-#     #     mul = push_call!(tape, NNlib.batched_mul, args[2], permute._op.val)
-#     #     return push_call!(tape, permutedims, mul._op.val, (3, 2, 1))
-#     # elseif A_ndims == 2 && B_ndims in (2, 3)
-#     elseif A_ndims in (2, 3) && B_ndims in (2, 3)
-#         return push_call!(tape, NNlib.batched_mul, args[2], args[1])
-#     else
-#         error("MatMul with arrays of $A_ndims and $B_ndims is not implemented yet")
-#     end
-# end
-
-function my_batched_mul(A, B)
-    B = permutedims(B, [3, 2, 1])
-    C = NNlib.batched_mul(A, B)
-    return permutedims(C, [3, 2, 1])
-end
-
-function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
-    A_ndims = ndims(args[1]._op.val)
-    B_ndims = ndims(args[2]._op.val)
-    if A_ndims == 2 && B_ndims == 2
-        return push_call!(tape, *, args[2], args[1])
-    elseif A_ndims in (2, 3) && B_ndims in (2, 3)
-        return push_call!(tape, my_batched_mul, args[2], args[1])
-    else
-        error("MatMul with arrays of $A_ndims and $B_ndims is not implemented yet")
-    end
 end
