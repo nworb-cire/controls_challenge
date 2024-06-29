@@ -42,7 +42,7 @@ end
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, attrs::AttrDict)
     dims = Tuple(vec(tape[args[2]].val))
     # replace -1 with :
-    dims = map(x -> x == -1 ? Colon() : x, dims)
+    dims = map(x -> x == -1 ? (:) : Integer(x), dims)
     if length(dims) == 2
         dims = (dims[2], dims[1])
     elseif length(dims) > 2
