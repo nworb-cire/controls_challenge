@@ -23,7 +23,6 @@ const STEER_RANGE = (-2, 2)
 const MAX_ACC_DELTA = 0.5
 const DEL_T = 0.1
 const LAT_ACCEL_COST_MULTIPLIER = 50.0
-
 const FUTURE_PLAN_STEPS = FPS * 5
 
 struct State
@@ -100,8 +99,6 @@ function get_current_lataccel(model::TinyPhysicsModel, sim_states::Vector{State}
     tokenized_actions = encode(model.tokenizer, past_preds)
     raw_states::Matrix{Float32} = hcat([getfield.(sim_states, field) for field in fieldnames(State)]...)
     states = hcat(actions, raw_states)
-    @show size(states)
-    @show size(tokenized_actions)
     return decode(model.tokenizer, predict(states, tokenized_actions))
 end
 
@@ -122,12 +119,7 @@ mutable struct PIDController <: BaseController
     prev_error::Float32
 
     function PIDController()
-        kp = 0.3
-        ki = 0.05
-        kd = -0.1
-        integral = 0.0
-        prev_error = 0.0
-        new(kp, ki, kd, integral, prev_error)
+        new(0.3, 0.05, -0.1, 0.0, 0.0)
     end
 
     function PIDController(kp::Float32, ki::Float32, kd::Float32)
@@ -331,7 +323,7 @@ function main()
         cost, _, _ = run_rollout(data, controller, debug=args["debug"])
         @printf("\nAverage lataccel_cost: %6.4f, average jerk_cost: %6.4f, average total_cost: %6.4f\n", cost["lataccel_cost"], cost["jerk_cost"], cost["total_cost"])
     elseif isdir(data_path)
-        run_rollout_partial = (x) -> run_rollout(x, args["controller"], args["model_path"], debug=false)
+        run_rollout_partial = (x) -> run_rollout(x, controller, debug=false)
         files = readdir(data_path)
         data = [get_data(joinpath(data_path, f)) for f in files[1:min(args["num_segs"], end)]]
         results = process_map(run_rollout_partial, data, nworkers=16, batch_size=10)
