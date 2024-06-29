@@ -90,7 +90,7 @@ function my_batched_mul(A, B)
     return permutedims(C, [3, 2, 1])
 end
 
-function load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
     A_ndims = ndims(args[1]._op.val)
     B_ndims = ndims(args[2]._op.val)
     if A_ndims == 2 && B_ndims == 2
