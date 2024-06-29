@@ -27,21 +27,21 @@ const LAT_ACCEL_COST_MULTIPLIER = 50.0
 const FUTURE_PLAN_STEPS = FPS * 5
 
 struct State
-    roll_lataccel::Float64
-    v_ego::Float64
-    a_ego::Float64
+    roll_lataccel::Float32
+    v_ego::Float32
+    a_ego::Float32
 end
 
 struct FuturePlan
-    lataccel::Vector{Float64}
-    roll_lataccel::Vector{Float64}
-    v_ego::Vector{Float64}
-    a_ego::Vector{Float64}
+    lataccel::Vector{Float32}
+    roll_lataccel::Vector{Float32}
+    v_ego::Vector{Float32}
+    a_ego::Vector{Float32}
 end
 
 struct LataccelTokenizer
     vocab_size::Int
-    bins::Vector{Float64}
+    bins::Vector{Float32}
 
     function LataccelTokenizer()
         bins = LinRange(LATACCEL_RANGE[1], LATACCEL_RANGE[2], VOCAB_SIZE)
@@ -49,7 +49,7 @@ struct LataccelTokenizer
     end
 end
 
-function encode(tokenizer::LataccelTokenizer, value::Union{Float64, Vector{Float64}})
+function encode(tokenizer::LataccelTokenizer, value::Union{Float32, Vector{Float32}})
     value = clip(tokenizer, value)
     digitized = searchsortedlast.(Ref(tokenizer.bins), value)
     return digitized
@@ -59,7 +59,7 @@ function decode(tokenizer::LataccelTokenizer, token::Union{Int, Vector{Int}})
     return tokenizer.bins[token]
 end
 
-function clip(tokenizer::LataccelTokenizer, value::Union{Float64, Vector{Float64}})
+function clip(tokenizer::LataccelTokenizer, value::Union{Float32, Vector{Float32}})
     return clamp.(value, LATACCEL_RANGE[1], LATACCEL_RANGE[2])
 end
 
@@ -76,18 +76,16 @@ struct TinyPhysicsModel
     tokenizer::LataccelTokenizer
     debug::Bool
 
-    function TinyPhysicsModel(model_path::String; debug=false)
+    function TinyPhysicsModel(; debug=false)
         tokenizer = LataccelTokenizer()
         new(tokenizer, debug)
     end
 end
 
-function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, 3} where T}; temperature=1.0)
-    states = input_data["states"]
-    states = reshape(states, 4, 20, :)
-    states = Float32.(states)
-    tokens = input_data["tokens"]
-    tokens = reshape(tokens, 20, :)
+function predict(states::Matrix{Float32}, tokens::Vector{Int64}; temperature=1.0)
+    states = permutedims(states)
+    states = reshape(states, size(states)..., 1)
+    tokens = reshape(tokens, size(tokens)..., 1)
     res = onnx_model(states, tokens)
     res = permutedims(res, [3, 2, 1])
     res = res[1:1, :, :]  # fixme
@@ -98,12 +96,13 @@ function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, 3} w
     return sample(1:VOCAB_SIZE, weights)
 end
 
-function get_current_lataccel(model::TinyPhysicsModel, sim_states::Vector{State}, actions::Vector{Float64}, past_preds::Vector{Float64})
+function get_current_lataccel(model::TinyPhysicsModel, sim_states::Vector{State}, actions::Vector{Float32}, past_preds::Vector{Float32})
     tokenized_actions = encode(model.tokenizer, past_preds)
-    raw_states::Matrix{Float64} = hcat([getfield.(sim_states, field) for field in fieldnames(State)]...)
+    raw_states::Matrix{Float32} = hcat([getfield.(sim_states, field) for field in fieldnames(State)]...)
     states = hcat(actions, raw_states)
-    input_data = Dict("states" => reshape(states, 1, 1, length(states)), "tokens" => reshape(tokenized_actions, 1, 1, length(tokenized_actions)))
-    return decode(model.tokenizer, predict(model, input_data))
+    @show size(states)
+    @show size(tokenized_actions)
+    return decode(model.tokenizer, predict(states, tokenized_actions))
 end
 
 abstract type BaseController end
@@ -111,26 +110,54 @@ abstract type BaseController end
 struct ZeroController <: BaseController
 end
 
-function update(controller::ZeroController, target_lataccel::Float64, current_lataccel::Float64, state::State, futureplan::FuturePlan)
+function update!(controller::ZeroController, target_lataccel::Float32, current_lataccel::Float32, state::State, futureplan::FuturePlan)
     return 0.0
 end
 
+mutable struct PIDController <: BaseController
+    kp::Float32
+    ki::Float32
+    kd::Float32
+    integral::Float32
+    prev_error::Float32
+
+    function PIDController()
+        kp = 0.3
+        ki = 0.05
+        kd = -0.1
+        integral = 0.0
+        prev_error = 0.0
+        new(kp, ki, kd, integral, prev_error)
+    end
+
+    function PIDController(kp::Float32, ki::Float32, kd::Float32)
+        new(kp, ki, kd, 0.0, 0.0)
+    end
+end
+
+function update!(controller::PIDController, target_lataccel::Float32, current_lataccel::Float32, state::State, futureplan::FuturePlan)
+    error = target_lataccel - current_lataccel
+    controller.integral += error
+    derivative = error - controller.prev_error
+    action = controller.kp * error + controller.ki * controller.integral + controller.kd * derivative
+    controller.prev_error = error
+    return action
+end
+
 mutable struct TinyPhysicsSimulator
-    data_path::String
     sim_model::TinyPhysicsModel
     data::DataFrame
     controller::BaseController
     debug::Bool
     step_idx::Int
     state_history::Vector{State}
-    action_history::Vector{Float64}
-    current_lataccel_history::Vector{Float64}
-    target_lataccel_history::Vector{Float64}
+    action_history::Vector{Float32}
+    current_lataccel_history::Vector{Float32}
+    target_lataccel_history::Vector{Float32}
     target_future::Union{Nothing, FuturePlan}
-    current_lataccel::Float64
+    current_lataccel::Float32
 
-    function TinyPhysicsSimulator(model::TinyPhysicsModel, data_path::String, controller::BaseController, debug::Bool=false)
-        data = get_data(data_path)
+    function TinyPhysicsSimulator(model::TinyPhysicsModel, data::DataFrame, controller::BaseController, debug::Bool=false)
         step_idx = CONTEXT_LENGTH
         state_target_futureplans = [get_state_target_futureplan(data, i) for i in 1:step_idx]
         state_history = [x[1] for x in state_target_futureplans]
@@ -141,7 +168,7 @@ mutable struct TinyPhysicsSimulator
         current_lataccel = current_lataccel_history[end]
         seed = parse(Int, bytes2hex(md5(data_path))[24:end], base = 16) % 10^4
         Random.seed!(seed)
-        new(data_path, model, data, controller, debug, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, target_future, current_lataccel)
+        new(model, data, controller, debug, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, target_future, current_lataccel)
     end
 end
 
@@ -169,7 +196,7 @@ function sim_step(sim::TinyPhysicsSimulator, step_idx::Int)
 end
 
 function control_step(sim::TinyPhysicsSimulator, step_idx::Int)
-    action = update(sim.controller, sim.target_lataccel_history[step_idx], sim.current_lataccel, sim.state_history[step_idx], sim.target_future)
+    action = update!(sim.controller, sim.target_lataccel_history[step_idx], sim.current_lataccel, sim.state_history[step_idx], sim.target_future)
     if step_idx < CONTROL_START_IDX
         action = sim.data.steer_command[step_idx]
     end
@@ -256,28 +283,20 @@ function get_available_controllers()
     return [splitpath(f)[2] for f in readdir("controllers") if isfile(joinpath("controllers", f)) && endswith(f, ".py") && splitpath(f)[2] != "__init__.py"]
 end
 
-function run_rollout(data_path::String, controller_type::String, model_path::String; debug=false)
+function run_rollout(data::DataFrame, controller::BaseController; debug=false)
     tinyphysicsmodel = TinyPhysicsModel(
-        model_path, 
         # debug
     )
-    # controller_module = import("controllers.$(controller_type)")
-    # controller = controller_module.Controller()
-    controller = ZeroController()
-    sim = TinyPhysicsSimulator(tinyphysicsmodel, data_path, controller, debug)
+    sim = TinyPhysicsSimulator(tinyphysicsmodel, data, controller, debug)
     return rollout(sim), sim.target_lataccel_history, sim.current_lataccel_history
 end
 
+const data_path = "./data/00000.csv"
 function main()
     # available_controllers = get_available_controllers()
 
     s = ArgParseSettings()
     @add_arg_table! s begin
-        "--model_path" 
-            help="Path to the model file" 
-            # required=true
-            arg_type=String
-            default="./models/tinyphysics.onnx"
         "--data_path" 
             help="Path to the data file or directory" 
             # required=true
@@ -289,7 +308,8 @@ function main()
             arg_type=Int
         "--debug" 
             help="Enable debug mode" 
-            action=:store_true
+            # action=:store_true
+            default=true
         "--controller" 
             help="Type of controller" 
             # choices=available_controllers 
@@ -299,13 +319,22 @@ function main()
     args = parse_args(s)
 
     data_path = args["data_path"]
+    if args["controller"] == "zero"
+        controller = ZeroController()
+    elseif args["controller"] == "pid"
+        controller = PIDController()
+    else
+        error("Invalid controller")
+    end
     if isfile(data_path)
-        cost, _, _ = run_rollout(data_path, args["controller"], args["model_path"], debug=args["debug"])
+        data = get_data(data_path)
+        cost, _, _ = run_rollout(data, controller, debug=args["debug"])
         @printf("\nAverage lataccel_cost: %6.4f, average jerk_cost: %6.4f, average total_cost: %6.4f\n", cost["lataccel_cost"], cost["jerk_cost"], cost["total_cost"])
     elseif isdir(data_path)
         run_rollout_partial = (x) -> run_rollout(x, args["controller"], args["model_path"], debug=false)
         files = readdir(data_path)
-        results = process_map(run_rollout_partial, files[1:min(args["num_segs"], end)], nworkers=16, batch_size=10)
+        data = [get_data(joinpath(data_path, f)) for f in files[1:min(args["num_segs"], end)]]
+        results = process_map(run_rollout_partial, data, nworkers=16, batch_size=10)
         costs = [result[1] for result in results]
         costs_df = DataFrame(costs)
         @printf("\nAverage lataccel_cost: %6.4f, average jerk_cost: %6.4f, average total_cost: %6.4f\n", mean(costs_df.lataccel_cost), mean(costs_df.jerk_cost), mean(costs_df.total_cost))
