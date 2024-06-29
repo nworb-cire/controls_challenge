@@ -43,11 +43,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, 
     dims = Tuple(vec(tape[args[2]].val))
     # replace -1 with :
     dims = map(x -> x == -1 ? (:) : Integer(x), dims)
-    if length(dims) == 2
-        dims = (dims[2], dims[1])
-    elseif length(dims) > 2
-        dims = (dims[2], dims[1], dims[3:end]...)
-    end
+    dims = dims[end:-1:1]
     return push_call!(tape, reshape, tape[args[1]].val, dims)
 end
 
@@ -132,7 +128,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec
         elseif size(tape[args[1]].val, 3) == 3
             perm_ = [3, 1, 2, 4]
         elseif size(tape[args[1]].val, 4) == 3
-            perm_ = [4, 1, 2, 3]
+            perm_ = [4, 3, 2, 1]
         else
             perm_ = [1, 2, 3, 4]
         end
@@ -148,8 +144,6 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, a
     if A_ndims == 2 && B_ndims == 2
         return push_call!(tape, *, args[2], args[1])
     else
-        @show tape[args[1]].val |> size
-        @show tape[args[2]].val |> size
         return push_call!(tape, NNlib.batched_mul, args[2], args[1])
     end
 end
