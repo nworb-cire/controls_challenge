@@ -33,9 +33,9 @@ end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Range}, args::VarVec, attrs::AttrDict)
     start = tape[args[1]].val[1]
-    stop = tape[args[2]].val[1] + 1
+    stop = tape[args[2]].val[1] - 1
     step = tape[args[3]].val[1]
-    return push_call!(tape, range; start, stop, step)
+    return push_call!(tape, collect ∘ range; start, stop, step)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, attrs::AttrDict)
