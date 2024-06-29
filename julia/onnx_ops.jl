@@ -70,7 +70,8 @@ end
 function NNlib.unsqueeze(x::AbstractArray, dims)
     new_shape::Vector{Integer} = collect(size(x))
     for d in sort(collect(dims))
-        insert!(new_shape, d, 1)
+        # insert!(new_shape, d, 1)
+        new_shape = new_shape[1:d-1] ∪ [1] ∪ new_shape[d:end]
     end
     return reshape(x, new_shape...)
 end
