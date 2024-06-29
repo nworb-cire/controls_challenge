@@ -9,6 +9,8 @@ using Printf
 using NNlib: softmax
 using MD5
 using Plots
+using NaiveNASflux
+import ONNXNaiveNASflux: load
 
 const ACC_G = 9.81
 const FPS = 10
@@ -63,19 +65,18 @@ end
 
 struct TinyPhysicsModel
     tokenizer::LataccelTokenizer
-#     ort_session::ort.InferenceSession
+    ort_session
     debug::Bool
 
     function TinyPhysicsModel(model_path::String; debug=false)
         tokenizer = LataccelTokenizer()
-        # ort_session = ort.InferenceSession(model_path)
-        new(tokenizer, debug)
+        graph = ONNXNaiveNASflux.load(model_path)
+        new(tokenizer, ort_session, debug)
     end
 end
 
 function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, 3} where T}; temperature=1.0)
-#     res = ort.run(model.ort_session, [input_data])[1]
-    res = rand(1:VOCAB_SIZE, (1, 1, VOCAB_SIZE))
+    res = model.ort_session.run([input_data])[1]
     probs = softmax(res ./ temperature; dims=size(res, 3))
     @assert size(probs, 1) == 1
     @assert size(probs, 3) == VOCAB_SIZE
@@ -274,8 +275,7 @@ function main()
             arg_type=Int
         "--debug" 
             help="Enable debug mode" 
-            # action=:store_true
-            default=true
+            action=:store_true
         "--controller" 
             help="Type of controller" 
             # choices=available_controllers 

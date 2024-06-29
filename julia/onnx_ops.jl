@@ -120,3 +120,27 @@ function ONNX.take(
     end
     return out
 end
+
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec, attrs::AttrDict)
+    perm = attrs[:perm] .+ 1
+    @show size(tape[args[1]].val)
+    if length(perm) == 4
+        perm_ = [2, 1, 3, 4]  # put batch dimension first
+        perm_ = perm_[perm]
+        perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
+    end
+    @show size(permutedims(tape[args[1]].val, perm))
+    return push_call!(tape, permutedims, tape[args[1]].val, perm)
+end
+
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
+    A_ndims = ndims(args[1]._op.val)
+    B_ndims = ndims(args[2]._op.val)
+    if A_ndims == 2 && B_ndims == 2
+        return push_call!(tape, *, args[2], args[1])
+    else
+        # @show tape[args[1]].val |> size
+        # @show tape[args[2]].val |> size
+        return push_call!(tape, NNlib.batched_mul, args[2], args[1])
+    end
+end
