@@ -122,14 +122,23 @@ function ONNX.take(
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec, attrs::AttrDict)
+    # this is gross, figure out why this is necessary
     perm = attrs[:perm] .+ 1
-    @show size(tape[args[1]].val)
     if length(perm) == 4
-        perm_ = [2, 1, 3, 4]  # put batch dimension first
+        if size(tape[args[1]].val, 1) == 3
+            perm_ = [1, 2, 3, 4]
+        elseif size(tape[args[1]].val, 2) == 3
+            perm_ = [2, 1, 3, 4]
+        elseif size(tape[args[1]].val, 3) == 3
+            perm_ = [3, 1, 2, 4]
+        elseif size(tape[args[1]].val, 4) == 3
+            perm_ = [4, 1, 2, 3]
+        else
+            perm_ = [1, 2, 3, 4]
+        end
         perm_ = perm_[perm]
         perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
     end
-    @show size(permutedims(tape[args[1]].val, perm))
     return push_call!(tape, permutedims, tape[args[1]].val, perm)
 end
 
@@ -139,8 +148,22 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, a
     if A_ndims == 2 && B_ndims == 2
         return push_call!(tape, *, args[2], args[1])
     else
-        # @show tape[args[1]].val |> size
-        # @show tape[args[2]].val |> size
+        @show tape[args[1]].val |> size
+        @show tape[args[2]].val |> size
         return push_call!(tape, NNlib.batched_mul, args[2], args[1])
     end
+end
+
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Not}, args::VarVec, attrs::AttrDict)
+    return push_call!(tape, .!, tape[args[1]].val)
+end
+
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Where}, args::VarVec, attrs::AttrDict)
+    return push_call!(tape, (x, y, z) -> ifelse.(x, y, z), tape[args[1]].val, tape[args[2]].val, tape[args[3]].val)
+end
+
+function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Softmax}, args::VarVec, attrs::AttrDict)
+    axis = attrs[:axis]
+    dims = axis >= 0 ? ndims(input) - axis  : -axis 
+    return push_call!(tape, NNlib.softmax, tape[args[1]].val; dims)
 end
