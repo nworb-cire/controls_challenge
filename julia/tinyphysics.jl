@@ -9,8 +9,8 @@ using Printf
 using NNlib: softmax
 using MD5
 using Plots
-using NaiveNASflux
-import ONNXNaiveNASflux: load
+
+include("./onnx_ops.jl")
 
 const ACC_G = 9.81
 const FPS = 10
@@ -63,20 +63,34 @@ function clip(tokenizer::LataccelTokenizer, value::Union{Float64, Vector{Float64
     return clamp.(value, LATACCEL_RANGE[1], LATACCEL_RANGE[2])
 end
 
+const model_path = "./models/tinyphysics.onnx"
+onnx_model = let
+    b = 3
+    A = ones(Float32, 4, 20, b)
+    B = ones(Int64, 20, b)
+    tape = ONNX.load(model_path, A, B)
+    ONNX.compile(tape)
+end
+
 struct TinyPhysicsModel
     tokenizer::LataccelTokenizer
-    ort_session
     debug::Bool
 
     function TinyPhysicsModel(model_path::String; debug=false)
         tokenizer = LataccelTokenizer()
-        graph = ONNXNaiveNASflux.load(model_path)
-        new(tokenizer, ort_session, debug)
+        new(tokenizer, debug)
     end
 end
 
 function predict(model::TinyPhysicsModel, input_data::Dict{String, Array{T, 3} where T}; temperature=1.0)
-    res = model.ort_session.run([input_data])[1]
+    states = input_data["states"]
+    states = reshape(states, 4, 20, :)
+    states = Float32.(states)
+    tokens = input_data["tokens"]
+    tokens = reshape(tokens, 20, :)
+    res = onnx_model(states, tokens)
+    res = permutedims(res, [3, 2, 1])
+    res = res[1:1, :, :]  # fixme
     probs = softmax(res ./ temperature; dims=size(res, 3))
     @assert size(probs, 1) == 1
     @assert size(probs, 3) == VOCAB_SIZE
