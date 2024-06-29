@@ -51,7 +51,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :ReduceMean}, args::VarVe
     dims = attrs[:axes]
     # replace -1 with size
     N = ndims(tape[args[1]].val)
-    dims = map(x -> x < 0 ? x + N + 1 : x, dims)
+    dims = map(x -> x >= 0 ? N - x : -x, dims)
     return push_call!(tape, mean, tape[args[1]].val; dims)
 end
 

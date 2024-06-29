@@ -7,10 +7,10 @@ b = 3
 # B = zeros(Int64, b, 20);
 
 # ONNX.jl requires the dimensions to be reversed from how python onnxruntime does it
-A = zeros(Float32, 4, 20, b);
-B = zeros(Int64, 20, b);
+A = ones(Float32, 4, 20, b);
+B = ones(Int64, 20, b);
 
-tape = ONNX.load(open("models/tmp_tinyphysics_extracted.onnx"), A, B)
+tape = ONNX.load(open("models/tinyphysics.onnx"), A, B)
 model = ONNX.compile(tape)
 outputs = model(A, B)
 if !isa(outputs, Tuple)
