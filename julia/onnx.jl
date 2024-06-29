@@ -19,3 +19,15 @@ end
 for (i, o) in enumerate(outputs)
     println("Output $i: $(size(o))")
 end
+@assert outputs[1][1:3, 1:3, 1] ≈ [
+    6.91149  6.82687  6.51002
+    3.14077  3.61317  3.34305
+    3.32208  3.93678  3.60959
+]
+
+using Zygote
+
+
+∇ = gradient(A, B) do A, B
+    sum(model(A, B))
+end

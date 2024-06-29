@@ -68,12 +68,13 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Div}, args::VarVec, attr
 end
 
 function NNlib.unsqueeze(x::AbstractArray, dims)
-    new_shape::Vector{Integer} = collect(size(x))
-    for d in sort(collect(dims))
-        # insert!(new_shape, d, 1)
-        new_shape = new_shape[1:d-1] ∪ [1] ∪ new_shape[d:end]
-    end
-    return reshape(x, new_shape...)
+    # new_shape::Vector{Integer} = collect(size(x))
+    # for d in sort(collect(dims))
+    #     # insert!(new_shape, d, 1)
+    #     new_shape = new_shape[1:d-1] ∪ [1] ∪ new_shape[d:end]
+    # end
+    # return reshape(x, new_shape...)
+    return NNlib.unsqueeze(x)
 end
 
 function ONNX.onnx_unsqueeze(x::Real, dims)
@@ -101,21 +102,20 @@ function ONNX.take(
     # we will take slices of data of this size
     size_before = (size(data)[1:dim-1]...,)
     size_after = (size(data)[dim+1:ndims(data)]...,)
-    # and put them into output array at out[:, :, ..., idxs[i, j, ...]]
-    out = similar(data, (size_before..., size(idxs)..., size_after...))
-    colons_before = [(:) for _=1:dim-1]
-    colons_after = [(:) for _=dim+1:ndims(data)]
-    # iteration over idxs doesn't depend on data or dimension
-    # we iterate over the last index purely due to memory layout
-    for i=1:size(idxs, ndims(idxs))
-        # R - slice of idxs (not slice of data!)
-        R = [[(:) for _=1:ndims(idxs)-1]..., i]
-        # ensure I = idxs[R...] is itself an array and not a scalar
-        I = [idxs[R...]...,]
-        slice = data[colons_before..., I, colons_after...]
-        out[colons_before..., R..., colons_after...] = slice
-    end
-    return out
+    out_size = (size_before..., size(idxs)..., size_after...)
+    colons_before = ntuple(_ -> :, dim-1)
+    colons_after = ntuple(_ -> :, ndims(data) - dim)
+
+    # Collect slices and build the output array
+    slices = [
+        data[colons_before..., idxs[R]..., colons_after...]
+        for R in CartesianIndices(idxs)
+    ]
+    
+    # Reshape the collected slices into the desired output shape
+    new_out = reshape(vcat(slices...), out_size)
+    
+    return new_out
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec, attrs::AttrDict)
