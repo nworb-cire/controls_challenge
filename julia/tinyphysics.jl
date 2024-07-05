@@ -102,39 +102,7 @@ function get_current_lataccel(model::TinyPhysicsModel, sim_states::Vector{State}
     return decode(model.tokenizer, predict(states, tokenized_actions))
 end
 
-abstract type BaseController end
-
-struct ZeroController <: BaseController
-end
-
-function update!(controller::ZeroController, target_lataccel::Float32, current_lataccel::Float32, state::State, futureplan::FuturePlan)
-    return 0.0
-end
-
-mutable struct PIDController <: BaseController
-    kp::Float32
-    ki::Float32
-    kd::Float32
-    integral::Float32
-    prev_error::Float32
-
-    function PIDController()
-        new(0.3, 0.05, -0.1, 0.0, 0.0)
-    end
-
-    function PIDController(kp::Float32, ki::Float32, kd::Float32)
-        new(kp, ki, kd, 0.0, 0.0)
-    end
-end
-
-function update!(controller::PIDController, target_lataccel::Float32, current_lataccel::Float32, state::State, futureplan::FuturePlan)
-    error = target_lataccel - current_lataccel
-    controller.integral += error
-    derivative = error - controller.prev_error
-    action = controller.kp * error + controller.ki * controller.integral + controller.kd * derivative
-    controller.prev_error = error
-    return action
-end
+include("./controllers.jl")
 
 mutable struct TinyPhysicsSimulator
     sim_model::TinyPhysicsModel
