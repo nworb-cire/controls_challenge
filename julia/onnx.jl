@@ -10,7 +10,7 @@ b = 3
 A = ones(Float32, 4, 20, b);
 B = ones(Int64, 20, b);
 
-tape = ONNX.load(open("models/tinyphysics.onnx"), A, B)
+tape = ONNX.load("models/tinyphysics.onnx", A, B)
 model = ONNX.compile(tape)
 outputs = model(A, B)
 if !isa(outputs, Tuple)
@@ -25,9 +25,14 @@ end
     3.32208  3.93678  3.60959
 ]
 
-using Zygote
+import PyCall
 
+ort = PyCall.pyimport("onnxruntime")
+sess = ort.InferenceSession("models/tinyphysics.onnx")
 
-∇ = gradient(A, B) do A, B
-    sum(model(A, B))
+inputs = Dict("states" => permutedims(A, [3, 2, 1]), "tokens" => permutedims(B, [2, 1]))
+py_outputs = sess.run(["output"], inputs)
+for (i, o) in enumerate(py_outputs)
+    println("Output $i: $(size(o))")
 end
+@assert permutedims(py_outputs[1], [3, 2, 1]) ≈ outputs[1]
