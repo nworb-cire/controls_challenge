@@ -84,7 +84,7 @@ end
 function predict(states::Matrix{Float32}, tokens::Vector{Int64}; temperature=1.0)
     states = permutedims(states)
     states = reshape(states, size(states)..., 1)
-    tokens = reshape(tokens, size(tokens)..., 1)
+    tokens = reshape(tokens, size(tokens)..., 1) .+ 1
     res = onnx_model(states, tokens)
     res = permutedims(res, [3, 2, 1])
     res = res[1:1, :, :]  # fixme
@@ -145,9 +145,10 @@ function get_data(data_path::String)
 end
 
 function sim_step(sim::TinyPhysicsSimulator, step_idx::Int)
+    @show sim.state_history[end-CONTEXT_LENGTH+1:end]
     pred = get_current_lataccel(sim.sim_model, sim.state_history[end-CONTEXT_LENGTH+1:end], sim.action_history[end-CONTEXT_LENGTH+1:end], sim.current_lataccel_history[end-CONTEXT_LENGTH+1:end])
     pred = clamp(pred, sim.current_lataccel - MAX_ACC_DELTA, sim.current_lataccel + MAX_ACC_DELTA)
-    if step_idx >= CONTROL_START_IDX
+    if step_idx > CONTROL_START_IDX
         sim.current_lataccel = pred
     else
         sim.current_lataccel = get_state_target_futureplan(sim.data, step_idx)[2]
@@ -157,7 +158,7 @@ end
 
 function control_step(sim::TinyPhysicsSimulator, step_idx::Int)
     action = update!(sim.controller, sim.target_lataccel_history[step_idx], sim.current_lataccel, sim.state_history[step_idx], sim.target_future)
-    if step_idx < CONTROL_START_IDX
+    if step_idx ≤ CONTROL_START_IDX
         action = sim.data.steer_command[step_idx]
     end
     action = clamp(action, STEER_RANGE[1], STEER_RANGE[2])
@@ -273,7 +274,7 @@ function main()
         "--controller" 
             help="Type of controller" 
             # choices=available_controllers 
-            default="pid"
+            default="zero"
             arg_type=String
     end
     args = parse_args(s)
