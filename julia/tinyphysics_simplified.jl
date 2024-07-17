@@ -154,16 +154,6 @@ function step(
     return state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel
 end
 
-function compute_cost(sim)
-    target = sim.target_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
-    pred = sim.current_lataccel_history[CONTROL_START_IDX:COST_END_IDX]
-
-    lat_accel_cost = mean((target .- pred).^2) * 100
-    jerk_cost = mean((diff(pred) ./ DEL_T).^2) * 100
-    total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
-    return Dict("lataccel_cost" => lat_accel_cost, "jerk_cost" => jerk_cost, "total_cost" => total_cost)
-end
-
 function init(data::DataFrame)
     step_idx = CONTEXT_LENGTH
     state_target_futureplans = [get_state_target_futureplan(data, i) for i in 1:step_idx]
@@ -184,11 +174,15 @@ end
 
 function rollout(controller, data)
     state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel = init(data)
+    lat_accel_cost = 0f0
+    jerk_cost = 0f0
     for step_idx in CONTEXT_LENGTH:size(data, 1)
         state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel = step(controller, data, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel)
+        lat_accel_cost += (target_lataccel_history[end] - current_lataccel)^2
+        jerk_cost += (action_history[end] - action_history[end-1])^2
     end
 
-    # return compute_cost(sim)
+    return 100mean(lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER + jerk_cost)
 end
 
 function run_rollout(data::DataFrame, controller::BaseController)
@@ -203,7 +197,7 @@ function main()
     # ∇ = Zygote.gradient(pid) do pid
         controller = PIDController(pid...)
         cost = run_rollout(data, controller)
-        return cost["total_cost"]
+        @show cost
     # end
     # @show ∇
     # controller = PIDController()
