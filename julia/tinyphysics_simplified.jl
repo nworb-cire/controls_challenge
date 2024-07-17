@@ -185,17 +185,13 @@ function rollout(controller, data)
     return 100mean(lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER + jerk_cost)
 end
 
-function run_rollout(data::DataFrame, controller::BaseController)
-    return rollout(controller, data)
-end
-
 const data_path = "./data/00000.csv"
 import Zygote
 function main()
     data = get_data(data_path)
     # ∇ = Zygote.gradient(pid) do pid
         controller = ZeroController()
-        cost = run_rollout(data, controller)
+        cost = rollout(controller, data)
         @show cost
     # end
     # @show ∇
