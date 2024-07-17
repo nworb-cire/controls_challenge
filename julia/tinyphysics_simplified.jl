@@ -17,8 +17,6 @@ const FPS = 10
 const CONTROL_START_IDX = 100
 const COST_END_IDX = 500
 const CONTEXT_LENGTH = 20
-const VOCAB_SIZE = 1024
-const LATACCEL_RANGE = (-5, 5)
 const STEER_RANGE = (-2, 2)
 const MAX_ACC_DELTA = 0.5
 const DEL_T = 0.1
@@ -38,42 +36,10 @@ struct FuturePlan
     a_ego::Vector
 end
 
-const tokenizer_bins = LinRange(LATACCEL_RANGE[1], LATACCEL_RANGE[2], VOCAB_SIZE)
-
-function encode(value)
-    value = clamp.(value, LATACCEL_RANGE[1], LATACCEL_RANGE[2])
-    digitized = searchsortedlast.(Ref(tokenizer_bins), value)
-    return digitized
-end
-
-function decode(token::Union{Int, Vector{Int}})
-    return tokenizer_bins[token]
-end
-
-const model_path = "./models/tinyphysics.onnx"
-const onnx_model = let
-    b = 3
-    A = ones(Float32, 4, 20, b)
-    B = ones(Int64, 20, b)
-    tape = ONNX.load(model_path, A, B)
-    ONNX.compile(tape)
-end
-
-function predict(states::Matrix, tokens::Vector; temperature=1.0)
-    states = permutedims(states)
-    states = reshape(states, size(states)..., 1)
-    tokens = reshape(tokens, size(tokens)..., 1)
-    res = onnx_model(states, tokens)
-    res = permutedims(res, [3, 2, 1])
-    res = res[1:1, :, :]  # fixme
-    probs = softmax(res ./ temperature; dims=size(res, 3))
-    @assert size(probs, 1) == 1
-    @assert size(probs, 3) == VOCAB_SIZE
-    weights = Weights(probs[1, 1, :])
-    return sample(1:VOCAB_SIZE, weights)
-end
+include("./model_runners.jl")
 
 function get_current_lataccel(
+        model::Function,
         sim_states::Vector{State},
         actions::Vector,
         past_preds::Vector
@@ -81,7 +47,7 @@ function get_current_lataccel(
     tokenized_actions = encode(past_preds)
     raw_states::Matrix{Float32} = hcat([getfield.(sim_states, field) for field in fieldnames(State)]...)
     states = hcat(actions, raw_states)
-    return decode(predict(states, tokenized_actions))
+    return decode(predict(model, states, tokenized_actions))
 end
 
 include("./controllers.jl")
@@ -120,6 +86,7 @@ function get_state_target_futureplan(data::DataFrame, step_idx::Int)
 end
 
 function step(
+        model::Function,
         controller::BaseController, 
         data::DataFrame, 
         step_idx::Int, 
@@ -143,7 +110,7 @@ function step(
     action_history = cat(action_history[2:end], action, dims=1)
 
     # sim step
-    pred = get_current_lataccel(state_history, action_history, current_lataccel_history)
+    pred = get_current_lataccel(model, state_history, action_history, current_lataccel_history)
     pred = clamp(pred, current_lataccel - MAX_ACC_DELTA, current_lataccel + MAX_ACC_DELTA)
     if step_idx > CONTROL_START_IDX
         current_lataccel = pred
@@ -172,12 +139,12 @@ function init(data::DataFrame)
 end
 
 
-function rollout(controller, data)
+function rollout(controller, data, model)
     state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel = init(data)
     lat_accel_cost = 0f0
     jerk_cost = 0f0
     for step_idx in CONTEXT_LENGTH:size(data, 1)
-        state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel = step(controller, data, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel)
+        state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel = step(model, controller, data, step_idx, state_history, action_history, current_lataccel_history, target_lataccel_history, current_lataccel)
         lat_accel_cost += (target_lataccel_history[end] - current_lataccel)^2
         jerk_cost += (action_history[end] - action_history[end-1])^2
     end
@@ -189,9 +156,10 @@ const data_path = "./data/00000.csv"
 import Zygote
 function main()
     data = get_data(data_path)
+    model = load_model()
     # ∇ = Zygote.gradient(pid) do pid
         controller = ZeroController()
-        cost = rollout(controller, data)
+        cost = rollout(model, controller, data)
         @show cost
     # end
     # @show ∇
