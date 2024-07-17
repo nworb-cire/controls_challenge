@@ -84,10 +84,15 @@ end
 function predict(states::Matrix{Float32}, tokens::Vector{Int64}; temperature=1.0)
     states = permutedims(states)
     states = reshape(states, size(states)..., 1)
-    tokens = reshape(tokens, size(tokens)..., 1) .+ 1
+    tokens = reshape(tokens, size(tokens)..., 1)
+    display(states)
+    display(tokens)
     res = onnx_model(states, tokens)
     res = permutedims(res, [3, 2, 1])
     res = res[1:1, :, :]  # fixme
+    @show res[1, 1, 1]
+    @show res[end, end, end]
+    error("stop")
     probs = softmax(res ./ temperature; dims=size(res, 3))
     @assert size(probs, 1) == 1
     @assert size(probs, 3) == VOCAB_SIZE
@@ -139,13 +144,12 @@ function get_data(data_path::String)
         v_ego = df.vEgo,
         a_ego = df.aEgo,
         target_lataccel = df.targetLateralAcceleration,
-        steer_command = df.steerCommand
+        steer_command = -df.steerCommand  # steer commands are logged with left-positive convention but this simulator uses right-positive
     )
     return processed_df
 end
 
 function sim_step(sim::TinyPhysicsSimulator, step_idx::Int)
-    @show sim.state_history[end-CONTEXT_LENGTH+1:end]
     pred = get_current_lataccel(sim.sim_model, sim.state_history[end-CONTEXT_LENGTH+1:end], sim.action_history[end-CONTEXT_LENGTH+1:end], sim.current_lataccel_history[end-CONTEXT_LENGTH+1:end])
     pred = clamp(pred, sim.current_lataccel - MAX_ACC_DELTA, sim.current_lataccel + MAX_ACC_DELTA)
     if step_idx > CONTROL_START_IDX
@@ -166,7 +170,7 @@ function control_step(sim::TinyPhysicsSimulator, step_idx::Int)
 end
 
 function get_state_target_futureplan(data::DataFrame, step_idx::Int)
-    state = data[step_idx, :]
+    state = data[step_idx+1, :]
     upper_idx = min(step_idx + FUTURE_PLAN_STEPS, size(data, 1))
     futureplan = FuturePlan(
         data.target_lataccel[step_idx+1:upper_idx],
@@ -182,8 +186,8 @@ function step(sim::TinyPhysicsSimulator)
     push!(sim.state_history, state)
     push!(sim.target_lataccel_history, target)
     sim.target_future = futureplan
-    control_step(sim, sim.step_idx)
-    sim_step(sim, sim.step_idx)
+    control_step(sim, sim.step_idx+1)
+    sim_step(sim, sim.step_idx+1)
     sim.step_idx += 1
 end
 
@@ -207,28 +211,32 @@ function rollout(sim::TinyPhysicsSimulator)
                 label=["Target lataccel" "Current lataccel"],
                 xlabel="Step",
                 ylabel="Lateral Acceleration",
-                title="Lateral Acceleration"
+                title="Lateral Acceleration",
+                legend=false
             )
             p2 = plot(
                 [sim.action_history],
                 label=["Action"],
                 xlabel="Step",
                 ylabel="Action",
-                title="Action"
+                title="Action",
+                legend=false
             )
             p3 = plot(
                 [[state.roll_lataccel for state in sim.state_history]],
                 label=["Roll Lateral Acceleration"],
                 xlabel="Step",
                 ylabel="Lateral Accel due to Road Roll",
-                title="Lateral Accel due to Road Roll"
+                title="Lateral Accel due to Road Roll",
+                legend=false
             )
             p4 = plot(
                 [[state.v_ego for state in sim.state_history]],
                 label=["v_ego"],
                 xlabel="Step",
                 ylabel="v_ego",
-                title="v_ego"
+                title="v_ego",
+                legend=false
             )
             for pl in [p1, p2, p3, p4]
                 vline!(pl, [CONTROL_START_IDX], label="Control Start", color="black", linestyle=:dash)
