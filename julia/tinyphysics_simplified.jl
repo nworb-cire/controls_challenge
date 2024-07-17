@@ -193,9 +193,8 @@ const data_path = "./data/00000.csv"
 import Zygote
 function main()
     data = get_data(data_path)
-    pid = Float32[0.3, 0.05, -0.1]
     # ∇ = Zygote.gradient(pid) do pid
-        controller = PIDController(pid...)
+        controller = ZeroController()
         cost = run_rollout(data, controller)
         @show cost
     # end

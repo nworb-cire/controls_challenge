@@ -3,7 +3,7 @@ abstract type BaseController end
 struct ZeroController <: BaseController
 end
 
-function update!(controller::ZeroController, target_lataccel::Float32, current_lataccel::Float32, state::State, futureplan::FuturePlan)
+function update!(controller::ZeroController, target_lataccel, current_lataccel, state::State, futureplan::FuturePlan)
     return 0.0
 end
 
