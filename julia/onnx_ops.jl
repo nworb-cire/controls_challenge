@@ -53,11 +53,13 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, 
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :ReduceMean}, args::VarVec, attrs::AttrDict)
-    dims = attrs[:axes]
-    # replace -1 with size
-    N = ndims(tape[args[1]].val)
-    dims = map(x -> x >= 0 ? N - x : -x, dims)
-    return push_call!(tape, mean, args[1]; dims)
+    function reducemean(arr; axes)
+        N = ndims(arr)
+        # replace -1 with size
+        dims = map(x -> x >= 0 ? N - x : -x, axes)
+        return mean(arr, dims=dims)
+    end
+    return push_call!(tape, reducemean, args...; attrs...)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Pow}, args::VarVec, attrs::AttrDict)
@@ -128,13 +130,13 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec
     function _permutedims(arr, perm)
         perm = perm .+ 1
         if length(perm) == 4
-            if size(tape[args[1]].val, 1) == 3
+            if size(arr, 1) == 3
                 perm_ = [1, 2, 3, 4]
-            elseif size(tape[args[1]].val, 2) == 3
+            elseif size(arr, 2) == 3
                 perm_ = [2, 1, 3, 4]
-            elseif size(tape[args[1]].val, 3) == 3
+            elseif size(arr, 3) == 3
                 perm_ = [3, 1, 2, 4]
-            elseif size(tape[args[1]].val, 4) == 3
+            elseif size(arr, 4) == 3
                 perm_ = [4, 3, 2, 1]
             else
                 perm_ = [1, 2, 3, 4]
@@ -158,7 +160,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, a
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Not}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, .!, tape[args[1]].val)
+    return push_call!(tape, .!, args[1])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Where}, args::VarVec, attrs::AttrDict)
