@@ -32,19 +32,24 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Cast}, args::VarVec, att
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Range}, args::VarVec, attrs::AttrDict)
-    start = tape[args[1]].val[1] |> only
-    stop = tape[args[2]].val[1] |> only
-    stop = stop - 1
-    step = tape[args[3]].val[1] |> only
-    return push_call!(tape, collect ∘ range; start, stop, step)
+    function _range(start, stop, step)
+        start = only(start)
+        stop = only(stop) - 1
+        step = only(step)
+        return collect(start:step:stop)
+    end
+    return push_call!(tape, _range, args[1], args[2], args[3])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, attrs::AttrDict)
-    dims = Tuple(vec(tape[args[2]].val))
-    # replace -1 with :
-    dims = map(x -> x == -1 ? (:) : Integer(x), dims)
-    dims = dims[end:-1:1]
-    return push_call!(tape, reshape, args[1], dims)
+    function _reshape(arr, dims)
+        dims = Tuple(vec(dims))
+        # replace -1 with :
+        dims = map(x -> x == -1 ? (:) : Integer(x), dims)
+        dims = dims[end:-1:1]
+        return reshape(arr, dims...)
+    end
+    return push_call!(tape, _reshape, args[1], args[2])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :ReduceMean}, args::VarVec, attrs::AttrDict)
@@ -120,23 +125,26 @@ end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec, attrs::AttrDict)
     # this is gross, figure out why this is necessary
-    perm = attrs[:perm] .+ 1
-    if length(perm) == 4
-        if size(tape[args[1]].val, 1) == 3
-            perm_ = [1, 2, 3, 4]
-        elseif size(tape[args[1]].val, 2) == 3
-            perm_ = [2, 1, 3, 4]
-        elseif size(tape[args[1]].val, 3) == 3
-            perm_ = [3, 1, 2, 4]
-        elseif size(tape[args[1]].val, 4) == 3
-            perm_ = [4, 3, 2, 1]
-        else
-            perm_ = [1, 2, 3, 4]
+    function _permutedims(arr, perm)
+        perm = perm .+ 1
+        if length(perm) == 4
+            if size(tape[args[1]].val, 1) == 3
+                perm_ = [1, 2, 3, 4]
+            elseif size(tape[args[1]].val, 2) == 3
+                perm_ = [2, 1, 3, 4]
+            elseif size(tape[args[1]].val, 3) == 3
+                perm_ = [3, 1, 2, 4]
+            elseif size(tape[args[1]].val, 4) == 3
+                perm_ = [4, 3, 2, 1]
+            else
+                perm_ = [1, 2, 3, 4]
+            end
+            perm_ = perm_[perm]
+            perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
         end
-        perm_ = perm_[perm]
-        perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
+        return permutedims(arr, perm)
     end
-    return push_call!(tape, permutedims, args[1], perm)
+    return push_call!(tape, _permutedims, args[1], attrs[:perm])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
