@@ -31,7 +31,7 @@ end
 include("../model_runners.jl")
 
 @testset "Model runner tests" begin
-    onnx_model = load_model("models/tmp_tinyphysics_extracted.onnx")
+    onnx_model = load_model()
     states = Float32[
         -3.3502060e-01  3.6294633e-01  3.3763535e+01 -3.9068904e-02
         -3.3270627e-01  3.5840231e-01  3.3755951e+01 -6.7940064e-02

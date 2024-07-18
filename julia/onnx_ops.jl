@@ -44,7 +44,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Reshape}, args::VarVec, 
     # replace -1 with :
     dims = map(x -> x == -1 ? (:) : Integer(x), dims)
     dims = dims[end:-1:1]
-    return push_call!(tape, reshape, tape[args[1]].val, dims)
+    return push_call!(tape, reshape, args[1], dims)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :ReduceMean}, args::VarVec, attrs::AttrDict)
@@ -52,19 +52,19 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :ReduceMean}, args::VarVe
     # replace -1 with size
     N = ndims(tape[args[1]].val)
     dims = map(x -> x >= 0 ? N - x : -x, dims)
-    return push_call!(tape, mean, tape[args[1]].val; dims)
+    return push_call!(tape, mean, args[1]; dims)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Pow}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, broadcast, ^, tape[args[1]].val, tape[args[2]].val)
+    return push_call!(tape, broadcast, ^, args[1], args[2])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Sqrt}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, broadcast, √, tape[args[1]].val)
+    return push_call!(tape, broadcast, √, args[1])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Div}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, broadcast, /, tape[args[1]].val, tape[args[2]].val)
+    return push_call!(tape, broadcast, /, args[1], args[2])
 end
 
 function NNlib.unsqueeze(x::AbstractArray, dims)
@@ -136,7 +136,7 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec
         perm_ = perm_[perm]
         perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
     end
-    return push_call!(tape, permutedims, tape[args[1]].val, perm)
+    return push_call!(tape, permutedims, args[1], perm)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, attrs::AttrDict)
@@ -154,11 +154,11 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Not}, args::VarVec, attr
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Where}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, (x, y, z) -> ifelse.(x, y, z), tape[args[1]].val, tape[args[2]].val, tape[args[3]].val)
+    return push_call!(tape, (x, y, z) -> ifelse.(x, y, z), args[1], args[2], args[3])
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Softmax}, args::VarVec, attrs::AttrDict)
     axis = attrs[:axis]
     dims = axis >= 0 ? ndims(input) - axis  : -axis 
-    return push_call!(tape, NNlib.softmax, tape[args[1]].val; dims)
+    return push_call!(tape, NNlib.softmax, args[1]; dims)
 end
