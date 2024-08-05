@@ -31,7 +31,7 @@ end
 include("../model_runners.jl")
 
 @testset "Model runner tests" begin
-    onnx_model = load_model()
+    onnx_model = load_model("models/tmp_tinyphysics_extracted.onnx")
     states = Float32[
         -3.3502060e-01  3.6294633e-01  3.3763535e+01 -3.9068904e-02
         -3.3270627e-01  3.5840231e-01  3.3755951e+01 -6.7940064e-02
@@ -62,8 +62,8 @@ include("../model_runners.jl")
     states = reshape(states, size(states)..., 1)
     tokens = reshape(tokens, size(tokens)..., 1)
     res = onnx_model(states, tokens)
-    res = permutedims(res, [3, 2, 1])
-    @test size(res) == (1, 20, 1024)
-    @test res[1, 1, 1] ≈ -3.7462592
-    @test res[end, end, end] ≈ -4.9458365
+    # res = permutedims(res, [4, 3, 2, 1])
+    @test size(res) == (1, 4, 20, 32)
+    @test res[1, 1, 1, 1] ≈ 0.34214267
+    @test res[end, end, end, end] ≈ -0.5758193
 end

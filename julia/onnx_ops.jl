@@ -126,25 +126,13 @@ function ONNX.take(
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Transpose}, args::VarVec, attrs::AttrDict)
-    # this is gross, figure out why this is necessary
     function _permutedims(arr, perm)
+        @assert length(perm) == 4
         perm = perm .+ 1
-        if length(perm) == 4
-            if size(arr, 1) == 3
-                perm_ = [1, 2, 3, 4]
-            elseif size(arr, 2) == 3
-                perm_ = [2, 1, 3, 4]
-            elseif size(arr, 3) == 3
-                perm_ = [3, 1, 2, 4]
-            elseif size(arr, 4) == 3
-                perm_ = [4, 3, 2, 1]
-            else
-                perm_ = [1, 2, 3, 4]
-            end
-            perm_ = perm_[perm]
-            perm = perm_[[4, 3, 2, 1]]  # put batch dimension last  # [4, 3, 1, 2] ?
-        end
-        return permutedims(arr, perm)
+        # python uses NCHW, julia uses HWCN
+        py_to_jl = [4, 3, 1, 2]
+        perm = perm[py_to_jl]
+        arr = permutedims(arr, perm)
     end
     return push_call!(tape, _permutedims, args[1], attrs[:perm])
 end
@@ -155,7 +143,19 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :MatMul}, args::VarVec, a
     if A_ndims == 2 && B_ndims == 2
         return push_call!(tape, *, args[2], args[1])
     else
-        return push_call!(tape, NNlib.batched_mul, args[2], args[1])
+        function batched_mul(A, B)
+            @assert ndims(A) == 4
+            @assert ndims(B) == 4
+
+            # python uses NCHW, julia uses HWCN
+            py_to_jl = [4, 3, 1, 2]
+            A = permutedims(A, py_to_jl)
+            B = permutedims(B, py_to_jl)
+            C = NNlib.batched_mul(A, B)
+            jl_to_py = [3, 4, 2, 1]
+            return permutedims(C, jl_to_py)
+        end
+        return push_call!(tape, batched_mul, args[2], args[1])
     end
 end
 
@@ -164,7 +164,8 @@ function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Not}, args::VarVec, attr
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Where}, args::VarVec, attrs::AttrDict)
-    return push_call!(tape, (x, y, z) -> ifelse.(x, y, z), args[1], args[2], args[3])
+    _where(cond::AbstractArray, x::AbstractArray, y::AbstractArray) = ifelse.(cond, x, y)
+    return push_call!(tape, _where, args...)
 end
 
 function ONNX.load_node!(tape::Tape, ::OpConfig{:ONNX, :Softmax}, args::VarVec, attrs::AttrDict)
