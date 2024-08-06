@@ -1,25 +1,28 @@
+import numpy as np
+import pandas as pd
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from onnx2torch import convert
 
-from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER
+from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, VOCAB_SIZE, LATACCEL_RANGE, DATASET_PATH
 
 
 class LataccelTokenizer:
-  def __init__(self):
-    self.vocab_size = VOCAB_SIZE
-    self.bins = np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size)
+    def __init__(self):
+        self.vocab_size = VOCAB_SIZE
+        bins = np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size)
+        self.bins = torch.tensor(bins, dtype=torch.float32)
 
-  def encode(self, value: Union[float, np.ndarray, List[float]]) -> Union[int, np.ndarray]:
-    value = self.clip(value)
-    return np.digitize(value, self.bins, right=True)
+    def encode(self, value: torch.Tensor) -> torch.Tensor:
+        value = self.clip(value)
+        return torch.bucketize(value, self.bins, right=True)
 
-  def decode(self, token: Union[int, np.ndarray]) -> Union[float, np.ndarray]:
-    return self.bins[token]
+    def decode(self, token: torch.Tensor) -> torch.Tensor:
+        return self.bins[token]
 
-  def clip(self, value: Union[float, np.ndarray, List[float]]) -> Union[float, np.ndarray]:
-    return np.clip(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
+    def clip(self, value: torch.Tensor) -> torch.Tensor:
+        return torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
 
 
 class LightningModel(pl.LightningModule):
@@ -67,9 +70,10 @@ class LightningModel(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    states = torch.randn(1, 20, 4)
-    tokens = torch.randint(0, 4, (1, 20))
-    future_plan = torch.randn(10, 2)
+    df = pd.read_csv(DATASET_PATH / "00000.csv")
+    states = torch.tensor(df[["steerCommand", "roll", "vEgo", "aEgo"]].iloc[80:100].values, dtype=torch.float32).unsqueeze(0)
+    tokens = torch.tensor(df["targetLateralAcceleration"].iloc[80:100].values, dtype=torch.float32).unsqueeze(0)
+    tokens = LataccelTokenizer().encode(tokens)
 
     model = LightningModel("models/tinyphysics.onnx", torch.nn.Linear(4, 4))
     for _ in range(100):
