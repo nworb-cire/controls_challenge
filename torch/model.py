@@ -2,10 +2,10 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from onnx2torch import convert
 from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 
 from data import DataModule
+from state_model import StateModel
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE
 
 
@@ -18,10 +18,8 @@ class LightningModel(pl.LightningModule):
         controls_model: torch.nn.Module,
     ):
         super().__init__()
-        self.state_model = convert(onnx_model_path)
+        self.state_model = StateModel(onnx_model_path)
         # disable gradient computation for the state model
-        for param in self.state_model.parameters():
-            param.requires_grad = False
         self.controls_model = controls_model
         self.bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
 

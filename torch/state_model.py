@@ -1,12 +1,14 @@
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from onnx2torch import convert
 
 
-class AttnHead(nn.Module):
+class AttnHead(pl.LightningModule):
     def __init__(
         self,
         n_embd: int,
+        n_head: int,
         layer_norm_Constant_1,
         layer_norm_weight,
         layer_norm_bias,
@@ -15,11 +17,12 @@ class AttnHead(nn.Module):
     ):
         super().__init__()
         self.n_embd = n_embd
-        self.layer_norm_Constant_1 = layer_norm_Constant_1
-        self.layer_norm_weight = layer_norm_weight
-        self.layer_norm_bias = layer_norm_bias
-        self.c_attn_MatMul = c_attn_MatMul
-        self.c_proj_MatMul = c_proj_MatMul
+        self.n_head = n_head
+        self.layer_norm_Constant_1 = nn.Parameter(layer_norm_Constant_1)
+        self.layer_norm_weight = nn.Parameter(layer_norm_weight)
+        self.layer_norm_bias = nn.Parameter(layer_norm_bias)
+        self.c_attn_MatMul = nn.Parameter(c_attn_MatMul)
+        self.c_proj_MatMul = nn.Parameter(c_proj_MatMul)
 
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
         B, T, C = x.size()
@@ -42,7 +45,7 @@ class AttnHead(nn.Module):
         return h_0_attn_c_proj_mat_mul
 
 
-class MLP(nn.Module):
+class MLP(pl.LightningModule):
     def __init__(
         self,
         layer_norm_Constant_1,
@@ -56,15 +59,15 @@ class MLP(nn.Module):
         c_proj_MatMul,
     ):
         super().__init__()
-        self.layer_norm_Constant_1 = layer_norm_Constant_1
-        self.layer_norm_weight = layer_norm_weight
-        self.layer_norm_bias = layer_norm_bias
-        self.c_fc_MatMul = c_fc_MatMul
-        self.act_Constant = act_Constant
-        self.act_Constant_1 = act_Constant_1
-        self.act_Constant_2 = act_Constant_2
-        self.act_Constant_3 = act_Constant_3
-        self.c_proj_MatMul = c_proj_MatMul
+        self.layer_norm_Constant_1 = nn.Parameter(layer_norm_Constant_1)
+        self.layer_norm_weight = nn.Parameter(layer_norm_weight)
+        self.layer_norm_bias = nn.Parameter(layer_norm_bias)
+        self.c_fc_MatMul = nn.Parameter(c_fc_MatMul)
+        self.act_Constant = nn.Parameter(act_Constant)
+        self.act_Constant_1 = nn.Parameter(act_Constant_1)
+        self.act_Constant_2 = nn.Parameter(act_Constant_2)
+        self.act_Constant_3 = nn.Parameter(act_Constant_3)
+        self.c_proj_MatMul = nn.Parameter(c_proj_MatMul)
 
     def forward(self, x: torch.Tensor):
         # layer norm
@@ -87,10 +90,10 @@ class MLP(nn.Module):
         return x
 
 
-class Block(nn.Module):
-    def __init__(self, n_embd: int, attn_kwargs: dict, mlp_kwargs: dict):
+class Block(pl.LightningModule):
+    def __init__(self, attn_kwargs: dict, mlp_kwargs: dict):
         super().__init__()
-        self.attn = AttnHead(n_embd, **attn_kwargs)
+        self.attn = AttnHead(**attn_kwargs)
         self.mlp = MLP(**mlp_kwargs)
 
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
@@ -99,14 +102,15 @@ class Block(nn.Module):
         return x
 
 
-class StateModel(nn.Module):
+class StateModel(pl.LightningModule):
     def __init__(self, onnx_path: str):
         super().__init__()
         onnx_model = convert(onnx_path)
         self.heads = nn.Sequential(
             Block(
-                n_embd=128,
                 attn_kwargs=dict(
+                    n_embd=128,
+                    n_head=4,
                     layer_norm_Constant_1=getattr(onnx_model, "h/0/attn/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_7,
                     layer_norm_bias=onnx_model.initializers.onnx_initializer_8,
@@ -126,8 +130,9 @@ class StateModel(nn.Module):
                 )
             ),
             Block(
-                n_embd=128,
                 attn_kwargs=dict(
+                    n_embd=128,
+                    n_head=4,
                     layer_norm_Constant_1=getattr(onnx_model, "h/1/attn/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_16,
                     layer_norm_bias=onnx_model.initializers.onnx_initializer_17,
@@ -147,8 +152,9 @@ class StateModel(nn.Module):
                 )
             ),
             Block(
-                n_embd=128,
                 attn_kwargs=dict(
+                    n_embd=128,
+                    n_head=4,
                     layer_norm_Constant_1=getattr(onnx_model, "h/2/attn/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_24,
                     layer_norm_bias=onnx_model.initializers.onnx_initializer_25,
@@ -168,8 +174,9 @@ class StateModel(nn.Module):
                 )
             ),
             Block(
-                n_embd=128,
                 attn_kwargs=dict(
+                    n_embd=128,
+                    n_head=4,
                     layer_norm_Constant_1=getattr(onnx_model, "h/3/attn/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_32,
                     layer_norm_bias=onnx_model.initializers.onnx_initializer_33,
@@ -199,7 +206,11 @@ class StateModel(nn.Module):
         self.wp_embedding = nn.Embedding(20, 128)
         self.wp_embedding.weight.data = onnx_model.initializers.onnx_initializer_6
 
-        self.lm_head = onnx_model.initializers.onnx_initializer_42
+        self.layer_norm_constant_1 = nn.Parameter(getattr(onnx_model, "layer_norm_f/Constant_1").value)
+        self.layer_norm_weight = nn.Parameter(onnx_model.initializers.onnx_initializer_40)
+        self.layer_norm_bias = nn.Parameter(onnx_model.initializers.onnx_initializer_41)
+
+        self.lm_head = nn.Parameter(onnx_model.initializers.onnx_initializer_42)
 
     def forward(self, states, tokens):
         device = states.device
@@ -216,14 +227,10 @@ class StateModel(nn.Module):
         for head in self.heads:
             x = head(x, pos_emb)
 
-        layer_norm_f_constant_1 = getattr(self, "layer_norm_f/Constant_1")()
-        initializers_onnx_initializer_40 = self.initializers.onnx_initializer_40
-        initializers_onnx_initializer_41 = self.initializers.onnx_initializer_41
-
         # layer norm
         x = x - x.mean(dim=-1, keepdim=True)
-        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + layer_norm_f_constant_1)
-        x = (x * initializers_onnx_initializer_40) + initializers_onnx_initializer_41
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.layer_norm_constant_1)
+        x = (x * self.layer_norm_weight) + self.layer_norm_bias
 
         # lm head
         x = torch.matmul(x, self.lm_head)
