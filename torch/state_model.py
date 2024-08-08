@@ -4,15 +4,7 @@ import torch.nn as nn
 
 class AttnHead(nn.Module):
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
-        h_0_attn_shape = getattr(self, "h/0/attn/Shape")(x)
-        h_0_attn_constant = getattr(self, "h/0/attn/Constant")()
-        h_0_attn_gather = getattr(self, "h/0/attn/Gather")(h_0_attn_shape, h_0_attn_constant)
-        h_0_attn_shape_1 = getattr(self, "h/0/attn/Shape_1")(x)
-        h_0_attn_constant_1 = getattr(self, "h/0/attn/Constant_1")()
-        h_0_attn_gather_1 = getattr(self, "h/0/attn/Gather_1")(h_0_attn_shape_1, h_0_attn_constant_1)
-        h_0_attn_shape_2 = getattr(self, "h/0/attn/Shape_2")(x)
-        h_0_attn_constant_2 = getattr(self, "h/0/attn/Constant_2")()
-        h_0_attn_gather_2 = getattr(self, "h/0/attn/Gather_2")(h_0_attn_shape_2, h_0_attn_constant_2)
+        b, t, N = x.size()
         h_0_attn_layer_norm_reduce_mean = getattr(self, "h/0/attn/layer_norm/ReduceMean")(x)
         h_0_attn_layer_norm_sub = getattr(self, "h/0/attn/layer_norm/Sub")(x, h_0_attn_layer_norm_reduce_mean)
         h_0_attn_layer_norm_constant = getattr(self, "h/0/attn/layer_norm/Constant")()
@@ -31,11 +23,11 @@ class AttnHead(nn.Module):
         h_0_attn_constant_3 = getattr(self, "h/0/attn/Constant_3")()
         h_0_attn_split = getattr(self, "h/0/attn/Split")(h_0_attn_c_attn_mat_mul, h_0_attn_constant_3)
         h_0_attn_constant_4 = getattr(self, "h/0/attn/Constant_4")()
-        h_0_attn_div = getattr(self, "h/0/attn/Div")(h_0_attn_gather_2, h_0_attn_constant_4)
+        h_0_attn_div = getattr(self, "h/0/attn/Div")(N, h_0_attn_constant_4)
         h_0_attn_cast = getattr(self, "h/0/attn/Cast")(h_0_attn_div)
         h_0_attn_cast_1 = getattr(self, "h/0/attn/Cast_1")(h_0_attn_cast)
-        h_0_attn_unsqueeze = getattr(self, "h/0/attn/Unsqueeze")(h_0_attn_gather)
-        h_0_attn_unsqueeze_1 = getattr(self, "h/0/attn/Unsqueeze_1")(h_0_attn_gather_1)
+        h_0_attn_unsqueeze = getattr(self, "h/0/attn/Unsqueeze")(b)
+        h_0_attn_unsqueeze_1 = getattr(self, "h/0/attn/Unsqueeze_1")(t)
         h_0_attn_constant_5 = getattr(self, "h/0/attn/Constant_5")()
         h_0_attn_unsqueeze_2 = getattr(self, "h/0/attn/Unsqueeze_2")(h_0_attn_cast_1)
         h_0_attn_concat = getattr(self, "h/0/attn/Concat")(
@@ -44,8 +36,8 @@ class AttnHead(nn.Module):
             h_0_attn_constant_5,
             h_0_attn_unsqueeze_2,
         )
-        h_0_attn_unsqueeze_3 = getattr(self, "h/0/attn/Unsqueeze_3")(h_0_attn_gather)
-        h_0_attn_unsqueeze_4 = getattr(self, "h/0/attn/Unsqueeze_4")(h_0_attn_gather_1)
+        h_0_attn_unsqueeze_3 = getattr(self, "h/0/attn/Unsqueeze_3")(b)
+        h_0_attn_unsqueeze_4 = getattr(self, "h/0/attn/Unsqueeze_4")(t)
         h_0_attn_constant_6 = getattr(self, "h/0/attn/Constant_6")()
         h_0_attn_unsqueeze_5 = getattr(self, "h/0/attn/Unsqueeze_5")(h_0_attn_cast_1)
         h_0_attn_concat_1 = getattr(self, "h/0/attn/Concat_1")(
@@ -54,8 +46,8 @@ class AttnHead(nn.Module):
             h_0_attn_constant_6,
             h_0_attn_unsqueeze_5,
         )
-        h_0_attn_unsqueeze_6 = getattr(self, "h/0/attn/Unsqueeze_6")(h_0_attn_gather)
-        h_0_attn_unsqueeze_7 = getattr(self, "h/0/attn/Unsqueeze_7")(h_0_attn_gather_1)
+        h_0_attn_unsqueeze_6 = getattr(self, "h/0/attn/Unsqueeze_6")(b)
+        h_0_attn_unsqueeze_7 = getattr(self, "h/0/attn/Unsqueeze_7")(t)
         h_0_attn_constant_7 = getattr(self, "h/0/attn/Constant_7")()
         h_0_attn_unsqueeze_8 = getattr(self, "h/0/attn/Unsqueeze_8")(h_0_attn_cast_1)
         h_0_attn_concat_2 = getattr(self, "h/0/attn/Concat_2")(
@@ -85,16 +77,21 @@ class AttnHead(nn.Module):
         h_0_attn_softmax = getattr(self, "h/0/attn/Softmax")(h_0_attn_where)
         h_0_attn_mat_mul_1 = getattr(self, "h/0/attn/MatMul_1")(h_0_attn_softmax, h_0_attn_transpose_1)
         h_0_attn_transpose_3 = getattr(self, "h/0/attn/Transpose_3")(h_0_attn_mat_mul_1)
-        h_0_attn_unsqueeze_9 = getattr(self, "h/0/attn/Unsqueeze_9")(h_0_attn_gather)
-        h_0_attn_unsqueeze_10 = getattr(self, "h/0/attn/Unsqueeze_10")(h_0_attn_gather_1)
-        h_0_attn_unsqueeze_11 = getattr(self, "h/0/attn/Unsqueeze_11")(h_0_attn_gather_2)
+        h_0_attn_unsqueeze_9 = getattr(self, "h/0/attn/Unsqueeze_9")(b)
+        h_0_attn_unsqueeze_10 = getattr(self, "h/0/attn/Unsqueeze_10")(t)
+        h_0_attn_unsqueeze_11 = getattr(self, "h/0/attn/Unsqueeze_11")(N)
         h_0_attn_concat_3 = getattr(self, "h/0/attn/Concat_3")(h_0_attn_unsqueeze_9, h_0_attn_unsqueeze_10, h_0_attn_unsqueeze_11)
         h_0_attn_reshape_3 = getattr(self, "h/0/attn/Reshape_3")(h_0_attn_transpose_3, h_0_attn_concat_3)
         initializers_onnx_initializer_11 = self.initializers.onnx_initializer_11
         h_0_attn_c_proj_mat_mul = getattr(self, "h/0/attn/c_proj/MatMul")(h_0_attn_reshape_3, initializers_onnx_initializer_11)
-        h_0_add = getattr(self, "h/0/Add")(x, h_0_attn_c_proj_mat_mul)
-        h_0_mlp_layer_norm_reduce_mean = getattr(self, "h/0/mlp/layer_norm/ReduceMean")(h_0_add)
-        h_0_mlp_layer_norm_sub = getattr(self, "h/0/mlp/layer_norm/Sub")(h_0_add, h_0_mlp_layer_norm_reduce_mean)
+        return h_0_attn_c_proj_mat_mul
+
+
+class MLP(nn.Module):
+    def forward(self, x: torch.Tensor):
+        # layer norm
+        h_0_mlp_layer_norm_reduce_mean = getattr(self, "h/0/mlp/layer_norm/ReduceMean")(x)
+        h_0_mlp_layer_norm_sub = getattr(self, "h/0/mlp/layer_norm/Sub")(x, h_0_mlp_layer_norm_reduce_mean)
         h_0_mlp_layer_norm_constant = getattr(self, "h/0/mlp/layer_norm/Constant")()
         h_0_mlp_layer_norm_pow = getattr(self, "h/0/mlp/layer_norm/Pow")(h_0_mlp_layer_norm_sub, h_0_mlp_layer_norm_constant)
         h_0_mlp_layer_norm_reduce_mean_1 = getattr(self, "h/0/mlp/layer_norm/ReduceMean_1")(h_0_mlp_layer_norm_pow)
@@ -123,10 +120,27 @@ class AttnHead(nn.Module):
         h_0_mlp_act_mul_5 = getattr(self, "h/0/mlp/act/Mul_5")(h_0_mlp_act_constant_3, h_0_mlp_act_mul_4)
         initializers_onnx_initializer_15 = self.initializers.onnx_initializer_15
         h_0_mlp_c_proj_mat_mul = getattr(self, "h/0/mlp/c_proj/MatMul")(h_0_mlp_act_mul_5, initializers_onnx_initializer_15)
-        return getattr(self, "h/0/Add_1")(h_0_add, h_0_mlp_c_proj_mat_mul)
+        x = x + h_0_mlp_c_proj_mat_mul
+        return x
+
+
+class Block(nn.Module):
+    def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
+        x = x + self.attn(x, pos_emb)
+        x = x + self.mlp(x)
+        return x
 
 
 class StateModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.heads = nn.Sequential(
+            Block(),
+            Block(),
+            Block(),
+            Block(),
+        )
+
     def forward(self, states, tokens):
         device = states.device
         b, t, _ = states.size()
