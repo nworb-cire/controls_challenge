@@ -141,19 +141,17 @@ class StateModel(nn.Module):
         x = self.transformer.drop(emb + pos_emb)
         x = self.heads(x, pos_emb)
 
-        layer_norm_f_reduce_mean = getattr(self, "layer_norm_f/ReduceMean")(x)
-        layer_norm_f_sub = getattr(self, "layer_norm_f/Sub")(x, layer_norm_f_reduce_mean)
-        layer_norm_f_constant = getattr(self, "layer_norm_f/Constant")()
-        layer_norm_f_pow = getattr(self, "layer_norm_f/Pow")(layer_norm_f_sub, layer_norm_f_constant)
-        layer_norm_f_reduce_mean_1 = getattr(self, "layer_norm_f/ReduceMean_1")(layer_norm_f_pow)
+        x = x - x.mean(dim=-1, keepdim=True)
+
         layer_norm_f_constant_1 = getattr(self, "layer_norm_f/Constant_1")()
-        layer_norm_f_add = getattr(self, "layer_norm_f/Add")(layer_norm_f_reduce_mean_1, layer_norm_f_constant_1)
-        layer_norm_f_sqrt = getattr(self, "layer_norm_f/Sqrt")(layer_norm_f_add)
-        layer_norm_f_div = getattr(self, "layer_norm_f/Div")(layer_norm_f_sub, layer_norm_f_sqrt)
         initializers_onnx_initializer_40 = self.initializers.onnx_initializer_40
-        layer_norm_f_mul = getattr(self, "layer_norm_f/Mul")(layer_norm_f_div, initializers_onnx_initializer_40)
         initializers_onnx_initializer_41 = self.initializers.onnx_initializer_41
-        layer_norm_f_add_1 = getattr(self, "layer_norm_f/Add_1")(layer_norm_f_mul, initializers_onnx_initializer_41)
-        initializers_onnx_initializer_42 = self.initializers.onnx_initializer_42
-        lm_head_mat_mul = getattr(self, "lm_head/MatMul")(layer_norm_f_add_1, initializers_onnx_initializer_42)
-        return lm_head_mat_mul
+
+        # layer norm
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + layer_norm_f_constant_1)
+        x = (x * initializers_onnx_initializer_40) + initializers_onnx_initializer_41
+
+        # lm head
+        lm_head = self.initializers.onnx_initializer_42
+        x = torch.matmul(x, lm_head)
+        return x
