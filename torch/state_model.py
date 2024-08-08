@@ -88,31 +88,38 @@ class AttnHead(nn.Module):
 
 
 class MLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # TODO: read these from the ONNX file
+        self.Constant_1_output_0 = None
+        self.layer_norm_weight = None
+        self.layer_norm_bias = None
+
+        self.c_fc_MatMul = None
+
+        self.act_Constant = None
+        self.act_Constant_1 = None
+        self.act_Constant_2 = None
+        self.act_Constant_3 = None
+
+        self.c_proj_MatMul = None
+
     def forward(self, x: torch.Tensor):
         # layer norm
-        h_0_mlp_layer_norm_constant_1 = getattr(self, "h/0/mlp/layer_norm/Constant_1")()
-        initializers_onnx_initializer_12 = self.initializers.onnx_initializer_12
-        initializers_onnx_initializer_13 = self.initializers.onnx_initializer_13
-        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + h_0_mlp_layer_norm_constant_1)
-        x = (x * initializers_onnx_initializer_12) + initializers_onnx_initializer_13
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.Constant_1_output_0)
+        x = (x * self.layer_norm_weight) + self.layer_norm_bias
 
-        initializers_onnx_initializer_14 = self.initializers.onnx_initializer_14
-        h_0_mlp_c_fc_mat_mul = torch.matmul(x, initializers_onnx_initializer_14)
-        h_0_mlp_act_mul = h_0_mlp_c_fc_mat_mul * h_0_mlp_c_fc_mat_mul
-        h_0_mlp_act_mul_1 = h_0_mlp_c_fc_mat_mul * h_0_mlp_act_mul
-        h_0_mlp_act_constant = getattr(self, "h/0/mlp/act/Constant")()
-        h_0_mlp_act_mul_2 = h_0_mlp_act_constant * h_0_mlp_act_mul_1
-        h_0_mlp_act_add = h_0_mlp_c_fc_mat_mul + h_0_mlp_act_mul_2
-        h_0_mlp_act_constant_1 = getattr(self, "h/0/mlp/act/Constant_1")()
-        h_0_mlp_act_mul_3 = h_0_mlp_act_constant_1 * h_0_mlp_act_add
+        y = torch.matmul(x, self.c_fc_MatMul)
+        h_0_mlp_act_mul_1 = y * y * y
+        h_0_mlp_act_mul_2 = self.act_Constant * h_0_mlp_act_mul_1
+        h_0_mlp_act_add = y + h_0_mlp_act_mul_2
+        h_0_mlp_act_mul_3 = self.act_Constant_1 * h_0_mlp_act_add
         h_0_mlp_act_tanh = torch.tanh(h_0_mlp_act_mul_3)
-        h_0_mlp_act_constant_2 = getattr(self, "h/0/mlp/act/Constant_2")()
-        h_0_mlp_act_add_1 = h_0_mlp_act_constant_2 + h_0_mlp_act_tanh
-        h_0_mlp_act_mul_4 = h_0_mlp_c_fc_mat_mul * h_0_mlp_act_add_1
-        h_0_mlp_act_constant_3 = getattr(self, "h/0/mlp/act/Constant_3")()
-        h_0_mlp_act_mul_5 = h_0_mlp_act_constant_3 * h_0_mlp_act_mul_4
-        initializers_onnx_initializer_15 = self.initializers.onnx_initializer_15
-        h_0_mlp_c_proj_mat_mul = torch.matmul(h_0_mlp_act_mul_5, initializers_onnx_initializer_15)
+        h_0_mlp_act_add_1 = self.act_Constant_2 + h_0_mlp_act_tanh
+        h_0_mlp_act_mul_4 = y * h_0_mlp_act_add_1
+        h_0_mlp_act_mul_5 = self.act_Constant_3 * h_0_mlp_act_mul_4
+
+        h_0_mlp_c_proj_mat_mul = torch.matmul(h_0_mlp_act_mul_5, self.c_proj_MatMul)
         x = x + h_0_mlp_c_proj_mat_mul
         return x
 
