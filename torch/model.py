@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from onnx2torch import convert
 from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
+from torch import nn
 
 from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE
@@ -110,10 +111,30 @@ class LightningModel(pl.LightningModule):
 
 if __name__ == "__main__":
     data_module = DataModule()
-    model = LightningModel("models/tinyphysics.onnx", torch.nn.Linear(4, 1))
+    controls_model = nn.Sequential(
+        nn.Linear(1, 64),
+        nn.ReLU(),
+        nn.Linear(64, 64),
+        nn.ReLU(),
+        nn.Linear(64, 1),
+    )
+    model = LightningModel("models/tinyphysics.onnx", controls_model)
 
     trainer = pl.Trainer(
         max_epochs=1,
         fast_dev_run=True,
     )
     trainer.fit(model, datamodule=data_module)
+
+    torch.onnx.export(
+        controls_model,
+        torch.randn(2, 1),
+        "models/tinyphysics_controls.onnx",
+        verbose=True,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={
+            "input": {0: "b"},
+            "output": {0: "b"},
+        }
+    )
