@@ -189,6 +189,17 @@ class StateModel(nn.Module):
                 )
             ),
         )
+        self.wt_embedding = nn.Linear(4, 64)
+        self.wt_embedding.weight.data = onnx_model.initializers.onnx_initializer_3.T
+        self.wt_embedding.bias.data = onnx_model.initializers.onnx_initializer_4
+
+        self.wt2_embedding = nn.Embedding(1024, 64)
+        self.wt2_embedding.weight.data = onnx_model.initializers.onnx_initializer_5
+
+        self.wp_embedding = nn.Embedding(20, 128)
+        self.wp_embedding.weight.data = onnx_model.initializers.onnx_initializer_6
+
+        self.lm_head = onnx_model.initializers.onnx_initializer_42
 
     def forward(self, states, tokens):
         device = states.device
@@ -196,14 +207,14 @@ class StateModel(nn.Module):
         pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
 
         # forward the GPT model itself
-        num_emb = self.transformer.wt_embedding(states)  # numerical "embeddings"
-        tok_emb = self.transformer.wt2_embedding(tokens)  # token embeddings
+        num_emb = self.wt_embedding(states)  # numerical "embeddings"
+        tok_emb = self.wt2_embedding(tokens)  # token embeddings
         emb = torch.cat((num_emb, tok_emb), dim=-1)
-        pos_emb = self.transformer.wp_embedding(pos)  # position embeddings of shape (t, n_embd)
+        pos_emb = self.wp_embedding(pos)  # position embeddings of shape (t, n_embd)
 
-        x = self.transformer.drop(emb + pos_emb)
-        x = self.heads(x, pos_emb)
-
+        x = emb + pos_emb
+        for head in self.heads:
+            x = head(x, pos_emb)
 
         layer_norm_f_constant_1 = getattr(self, "layer_norm_f/Constant_1")()
         initializers_onnx_initializer_40 = self.initializers.onnx_initializer_40
@@ -215,8 +226,7 @@ class StateModel(nn.Module):
         x = (x * initializers_onnx_initializer_40) + initializers_onnx_initializer_41
 
         # lm head
-        lm_head = self.initializers.onnx_initializer_42
-        x = torch.matmul(x, lm_head)
+        x = torch.matmul(x, self.lm_head)
         return x
 
 
