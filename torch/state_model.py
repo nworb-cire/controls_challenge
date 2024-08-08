@@ -106,6 +106,7 @@ class MLP(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # layer norm
+        x = x - x.mean(dim=-1, keepdim=True)
         x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.Constant_1_output_0)
         x = (x * self.layer_norm_weight) + self.layer_norm_bias
 
@@ -155,13 +156,13 @@ class StateModel(nn.Module):
         x = self.transformer.drop(emb + pos_emb)
         x = self.heads(x, pos_emb)
 
-        x = x - x.mean(dim=-1, keepdim=True)
 
         layer_norm_f_constant_1 = getattr(self, "layer_norm_f/Constant_1")()
         initializers_onnx_initializer_40 = self.initializers.onnx_initializer_40
         initializers_onnx_initializer_41 = self.initializers.onnx_initializer_41
 
         # layer norm
+        x = x - x.mean(dim=-1, keepdim=True)
         x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + layer_norm_f_constant_1)
         x = (x * initializers_onnx_initializer_40) + initializers_onnx_initializer_41
 
