@@ -72,7 +72,7 @@ class MLP(pl.LightningModule):
     def forward(self, x: torch.Tensor):
         # layer norm
         x = x - x.mean(dim=-1, keepdim=True)
-        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.Constant_1_output_0)
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.layer_norm_Constant_1)
         x = (x * self.layer_norm_weight) + self.layer_norm_bias
 
         y = torch.matmul(x, self.c_fc_MatMul)
