@@ -90,36 +90,29 @@ class AttnHead(nn.Module):
 class MLP(nn.Module):
     def forward(self, x: torch.Tensor):
         # layer norm
-        h_0_mlp_layer_norm_reduce_mean = getattr(self, "h/0/mlp/layer_norm/ReduceMean")(x)
-        h_0_mlp_layer_norm_sub = getattr(self, "h/0/mlp/layer_norm/Sub")(x, h_0_mlp_layer_norm_reduce_mean)
-        h_0_mlp_layer_norm_constant = getattr(self, "h/0/mlp/layer_norm/Constant")()
-        h_0_mlp_layer_norm_pow = getattr(self, "h/0/mlp/layer_norm/Pow")(h_0_mlp_layer_norm_sub, h_0_mlp_layer_norm_constant)
-        h_0_mlp_layer_norm_reduce_mean_1 = getattr(self, "h/0/mlp/layer_norm/ReduceMean_1")(h_0_mlp_layer_norm_pow)
         h_0_mlp_layer_norm_constant_1 = getattr(self, "h/0/mlp/layer_norm/Constant_1")()
-        h_0_mlp_layer_norm_add = getattr(self, "h/0/mlp/layer_norm/Add")(h_0_mlp_layer_norm_reduce_mean_1, h_0_mlp_layer_norm_constant_1)
-        h_0_mlp_layer_norm_sqrt = getattr(self, "h/0/mlp/layer_norm/Sqrt")(h_0_mlp_layer_norm_add)
-        h_0_mlp_layer_norm_div = getattr(self, "h/0/mlp/layer_norm/Div")(h_0_mlp_layer_norm_sub, h_0_mlp_layer_norm_sqrt)
         initializers_onnx_initializer_12 = self.initializers.onnx_initializer_12
-        h_0_mlp_layer_norm_mul = getattr(self, "h/0/mlp/layer_norm/Mul")(h_0_mlp_layer_norm_div, initializers_onnx_initializer_12)
         initializers_onnx_initializer_13 = self.initializers.onnx_initializer_13
-        h_0_mlp_layer_norm_add_1 = getattr(self, "h/0/mlp/layer_norm/Add_1")(h_0_mlp_layer_norm_mul, initializers_onnx_initializer_13)
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + h_0_mlp_layer_norm_constant_1)
+        x = (x * initializers_onnx_initializer_12) + initializers_onnx_initializer_13
+
         initializers_onnx_initializer_14 = self.initializers.onnx_initializer_14
-        h_0_mlp_c_fc_mat_mul = getattr(self, "h/0/mlp/c_fc/MatMul")(h_0_mlp_layer_norm_add_1, initializers_onnx_initializer_14)
-        h_0_mlp_act_mul = getattr(self, "h/0/mlp/act/Mul")(h_0_mlp_c_fc_mat_mul, h_0_mlp_c_fc_mat_mul)
-        h_0_mlp_act_mul_1 = getattr(self, "h/0/mlp/act/Mul_1")(h_0_mlp_c_fc_mat_mul, h_0_mlp_act_mul)
+        h_0_mlp_c_fc_mat_mul = torch.matmul(x, initializers_onnx_initializer_14)
+        h_0_mlp_act_mul = h_0_mlp_c_fc_mat_mul * h_0_mlp_c_fc_mat_mul
+        h_0_mlp_act_mul_1 = h_0_mlp_c_fc_mat_mul * h_0_mlp_act_mul
         h_0_mlp_act_constant = getattr(self, "h/0/mlp/act/Constant")()
-        h_0_mlp_act_mul_2 = getattr(self, "h/0/mlp/act/Mul_2")(h_0_mlp_act_constant, h_0_mlp_act_mul_1)
-        h_0_mlp_act_add = getattr(self, "h/0/mlp/act/Add")(h_0_mlp_c_fc_mat_mul, h_0_mlp_act_mul_2)
+        h_0_mlp_act_mul_2 = h_0_mlp_act_constant * h_0_mlp_act_mul_1
+        h_0_mlp_act_add = h_0_mlp_c_fc_mat_mul + h_0_mlp_act_mul_2
         h_0_mlp_act_constant_1 = getattr(self, "h/0/mlp/act/Constant_1")()
-        h_0_mlp_act_mul_3 = getattr(self, "h/0/mlp/act/Mul_3")(h_0_mlp_act_constant_1, h_0_mlp_act_add)
-        h_0_mlp_act_tanh = getattr(self, "h/0/mlp/act/Tanh")(h_0_mlp_act_mul_3)
+        h_0_mlp_act_mul_3 = h_0_mlp_act_constant_1 * h_0_mlp_act_add
+        h_0_mlp_act_tanh = torch.tanh(h_0_mlp_act_mul_3)
         h_0_mlp_act_constant_2 = getattr(self, "h/0/mlp/act/Constant_2")()
-        h_0_mlp_act_add_1 = getattr(self, "h/0/mlp/act/Add_1")(h_0_mlp_act_constant_2, h_0_mlp_act_tanh)
-        h_0_mlp_act_mul_4 = getattr(self, "h/0/mlp/act/Mul_4")(h_0_mlp_c_fc_mat_mul, h_0_mlp_act_add_1)
+        h_0_mlp_act_add_1 = h_0_mlp_act_constant_2 + h_0_mlp_act_tanh
+        h_0_mlp_act_mul_4 = h_0_mlp_c_fc_mat_mul * h_0_mlp_act_add_1
         h_0_mlp_act_constant_3 = getattr(self, "h/0/mlp/act/Constant_3")()
-        h_0_mlp_act_mul_5 = getattr(self, "h/0/mlp/act/Mul_5")(h_0_mlp_act_constant_3, h_0_mlp_act_mul_4)
+        h_0_mlp_act_mul_5 = h_0_mlp_act_constant_3 * h_0_mlp_act_mul_4
         initializers_onnx_initializer_15 = self.initializers.onnx_initializer_15
-        h_0_mlp_c_proj_mat_mul = getattr(self, "h/0/mlp/c_proj/MatMul")(h_0_mlp_act_mul_5, initializers_onnx_initializer_15)
+        h_0_mlp_c_proj_mat_mul = torch.matmul(h_0_mlp_act_mul_5, initializers_onnx_initializer_15)
         x = x + h_0_mlp_c_proj_mat_mul
         return x
 
