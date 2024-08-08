@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from onnx2torch import convert
 
 
 class AttnHead(nn.Module):
@@ -83,21 +84,28 @@ class AttnHead(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        layer_norm_Constant_1,
+        layer_norm_weight,
+        layer_norm_bias,
+        c_fc_MatMul,
+        act_Constant,
+        act_Constant_1,
+        act_Constant_2,
+        act_Constant_3,
+        c_proj_MatMul,
+    ):
         super().__init__()
-        # TODO: read these from the ONNX file
-        self.Constant_1_output_0 = None
-        self.layer_norm_weight = None
-        self.layer_norm_bias = None
-
-        self.c_fc_MatMul = None
-
-        self.act_Constant = None
-        self.act_Constant_1 = None
-        self.act_Constant_2 = None
-        self.act_Constant_3 = None
-
-        self.c_proj_MatMul = None
+        self.layer_norm_Constant_1 = layer_norm_Constant_1
+        self.layer_norm_weight = layer_norm_weight
+        self.layer_norm_bias = layer_norm_bias
+        self.c_fc_MatMul = c_fc_MatMul
+        self.act_Constant = act_Constant
+        self.act_Constant_1 = act_Constant_1
+        self.act_Constant_2 = act_Constant_2
+        self.act_Constant_3 = act_Constant_3
+        self.c_proj_MatMul = c_proj_MatMul
 
     def forward(self, x: torch.Tensor):
         # layer norm
@@ -121,6 +129,11 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
+    def __init__(self, n_embd: int, attn_kwargs: dict, mlp_kwargs: dict):
+        super().__init__()
+        # self.attn = AttnHead(n_embd, **attn_kwargs)
+        self.mlp = MLP(**mlp_kwargs)
+
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
         x = x + self.attn(x, pos_emb)
         x = x + self.mlp(x)
@@ -128,13 +141,70 @@ class Block(nn.Module):
 
 
 class StateModel(nn.Module):
-    def __init__(self):
+    def __init__(self, onnx_path: str):
         super().__init__()
+        onnx_model = convert(onnx_path)
         self.heads = nn.Sequential(
-            Block(),
-            Block(),
-            Block(),
-            Block(),
+            Block(
+                n_embd=128,
+                attn_kwargs=dict(),
+                mlp_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/0/mlp/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_12,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_13,
+                    c_fc_MatMul=onnx_model.initializers.onnx_initializer_14,
+                    act_Constant=getattr(onnx_model, "h/0/mlp/act/Constant").value,
+                    act_Constant_1=getattr(onnx_model, "h/0/mlp/act/Constant_1").value,
+                    act_Constant_2=getattr(onnx_model, "h/0/mlp/act/Constant_2").value,
+                    act_Constant_3=getattr(onnx_model, "h/0/mlp/act/Constant_3").value,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_15,
+                )
+            ),
+            Block(
+                n_embd=128,
+                attn_kwargs=dict(),
+                mlp_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/1/mlp/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_20,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_21,
+                    c_fc_MatMul=onnx_model.initializers.onnx_initializer_22,
+                    act_Constant=getattr(onnx_model, "h/1/mlp/act/Constant").value,
+                    act_Constant_1=getattr(onnx_model, "h/1/mlp/act/Constant_1").value,
+                    act_Constant_2=getattr(onnx_model, "h/1/mlp/act/Constant_2").value,
+                    act_Constant_3=getattr(onnx_model, "h/1/mlp/act/Constant_3").value,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_23,
+                )
+            ),
+            Block(
+                n_embd=128,
+                attn_kwargs=dict(),
+                mlp_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/2/mlp/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_28,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_29,
+                    c_fc_MatMul=onnx_model.initializers.onnx_initializer_30,
+                    act_Constant=getattr(onnx_model, "h/2/mlp/act/Constant").value,
+                    act_Constant_1=getattr(onnx_model, "h/2/mlp/act/Constant_1").value,
+                    act_Constant_2=getattr(onnx_model, "h/2/mlp/act/Constant_2").value,
+                    act_Constant_3=getattr(onnx_model, "h/2/mlp/act/Constant_3").value,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_31,
+                )
+            ),
+            Block(
+                n_embd=128,
+                attn_kwargs=dict(),
+                mlp_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/3/mlp/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_36,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_37,
+                    c_fc_MatMul=onnx_model.initializers.onnx_initializer_38,
+                    act_Constant=getattr(onnx_model, "h/3/mlp/act/Constant").value,
+                    act_Constant_1=getattr(onnx_model, "h/3/mlp/act/Constant_1").value,
+                    act_Constant_2=getattr(onnx_model, "h/3/mlp/act/Constant_2").value,
+                    act_Constant_3=getattr(onnx_model, "h/3/mlp/act/Constant_3").value,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_39,
+                )
+            ),
         )
 
     def forward(self, states, tokens):
@@ -165,3 +235,8 @@ class StateModel(nn.Module):
         lm_head = self.initializers.onnx_initializer_42
         x = torch.matmul(x, lm_head)
         return x
+
+
+if __name__ == "__main__":
+    onnx_path = "models/tinyphysics.onnx"
+    model = StateModel(onnx_path)
