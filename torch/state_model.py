@@ -4,82 +4,41 @@ from onnx2torch import convert
 
 
 class AttnHead(nn.Module):
-    def __init__(self, n_embd: int):
+    def __init__(
+        self,
+        n_embd: int,
+        layer_norm_Constant_1,
+        layer_norm_weight,
+        layer_norm_bias,
+        c_attn_MatMul,
+        c_proj_MatMul,
+    ):
         super().__init__()
         self.n_embd = n_embd
+        self.layer_norm_Constant_1 = layer_norm_Constant_1
+        self.layer_norm_weight = layer_norm_weight
+        self.layer_norm_bias = layer_norm_bias
+        self.c_attn_MatMul = c_attn_MatMul
+        self.c_proj_MatMul = c_proj_MatMul
 
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
-        b, t, N = x.size()
-        assert N % 4 == 0
+        B, T, C = x.size()
+        assert C % 4 == 0
 
         # layer norm
         x = x - x.mean(dim=-1, keepdim=True)
-        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.Constant_1_output_0)
+        x = x / torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + self.layer_norm_Constant_1)
         x = (x * self.layer_norm_weight) + self.layer_norm_bias
 
-        initializers_onnx_initializer_7 = self.initializers.onnx_initializer_7
-        initializers_onnx_initializer_8 = self.initializers.onnx_initializer_8
-        initializers_onnx_initializer_9 = self.initializers.onnx_initializer_9
-
-        x = (x * initializers_onnx_initializer_7) + initializers_onnx_initializer_8
-        x = torch.matmul(x, initializers_onnx_initializer_9)
+        x = torch.matmul(x, self.c_attn_MatMul)
         q, k, v = x.split(self.n_embd, dim=2)
-        h_0_attn_cast_1 = N // 4
-        h_0_attn_unsqueeze = getattr(self, "h/0/attn/Unsqueeze")(b)
-        h_0_attn_unsqueeze_1 = getattr(self, "h/0/attn/Unsqueeze_1")(t)
-        h_0_attn_constant_5 = getattr(self, "h/0/attn/Constant_5")()
-        h_0_attn_unsqueeze_2 = getattr(self, "h/0/attn/Unsqueeze_2")(h_0_attn_cast_1)
-        h_0_attn_concat = torch.concat((
-            h_0_attn_unsqueeze,
-            h_0_attn_unsqueeze_1,
-            h_0_attn_constant_5,
-            h_0_attn_unsqueeze_2,
-        ), dim=0)
-        h_0_attn_unsqueeze_3 = getattr(self, "h/0/attn/Unsqueeze_3")(b)
-        h_0_attn_unsqueeze_4 = getattr(self, "h/0/attn/Unsqueeze_4")(t)
-        h_0_attn_constant_6 = getattr(self, "h/0/attn/Constant_6")()
-        h_0_attn_unsqueeze_5 = getattr(self, "h/0/attn/Unsqueeze_5")(h_0_attn_cast_1)
-        h_0_attn_concat_1 = getattr(self, "h/0/attn/Concat_1")(
-            h_0_attn_unsqueeze_3,
-            h_0_attn_unsqueeze_4,
-            h_0_attn_constant_6,
-            h_0_attn_unsqueeze_5,
-        )
-        h_0_attn_unsqueeze_6 = getattr(self, "h/0/attn/Unsqueeze_6")(b)
-        h_0_attn_unsqueeze_7 = getattr(self, "h/0/attn/Unsqueeze_7")(t)
-        h_0_attn_constant_7 = getattr(self, "h/0/attn/Constant_7")()
-        h_0_attn_unsqueeze_8 = getattr(self, "h/0/attn/Unsqueeze_8")(h_0_attn_cast_1)
-        h_0_attn_concat_2 = getattr(self, "h/0/attn/Concat_2")(
-            h_0_attn_unsqueeze_6,
-            h_0_attn_unsqueeze_7,
-            h_0_attn_constant_7,
-            h_0_attn_unsqueeze_8,
-        )
-        h_0_attn_reshape = getattr(self, "h/0/attn/Reshape")(q, h_0_attn_concat)
-        h_0_attn_reshape_1 = getattr(self, "h/0/attn/Reshape_1")(k, h_0_attn_concat_1)
-        h_0_attn_transpose = getattr(self, "h/0/attn/Transpose")(h_0_attn_reshape_1)
-        h_0_attn_reshape_2 = getattr(self, "h/0/attn/Reshape_2")(v, h_0_attn_concat_2)
-        h_0_attn_transpose_1 = getattr(self, "h/0/attn/Transpose_1")(h_0_attn_reshape_2)
-        initializers_onnx_initializer_10 = self.initializers.onnx_initializer_10
-        h_0_attn_gather_3 = getattr(self, "h/0/attn/Gather_3")(initializers_onnx_initializer_10, pos_emb)
-        h_0_attn_transpose_2 = getattr(self, "h/0/attn/Transpose_2")(h_0_attn_reshape)
-        h_0_attn_mat_mul = getattr(self, "h/0/attn/MatMul")(h_0_attn_transpose, h_0_attn_transpose_2)
-        h_0_attn_constant_8 = getattr(self, "h/0/attn/Constant_8")()
-        h_0_attn_mul = getattr(self, "h/0/attn/Mul")(h_0_attn_mat_mul, h_0_attn_constant_8)
-        h_0_attn_not = getattr(self, "h/0/attn/Not")(h_0_attn_gather_3)
-        h_0_attn_cast_2 = getattr(self, "h/0/attn/Cast_2")(h_0_attn_not)
-        h_0_attn_constant_9 = getattr(self, "h/0/attn/Constant_9")()
-        h_0_attn_where = getattr(self, "h/0/attn/Where")(h_0_attn_cast_2, h_0_attn_constant_9, h_0_attn_mul)
-        h_0_attn_softmax = getattr(self, "h/0/attn/Softmax")(h_0_attn_where)
-        h_0_attn_mat_mul_1 = getattr(self, "h/0/attn/MatMul_1")(h_0_attn_softmax, h_0_attn_transpose_1)
-        h_0_attn_transpose_3 = getattr(self, "h/0/attn/Transpose_3")(h_0_attn_mat_mul_1)
-        h_0_attn_unsqueeze_9 = getattr(self, "h/0/attn/Unsqueeze_9")(b)
-        h_0_attn_unsqueeze_10 = getattr(self, "h/0/attn/Unsqueeze_10")(t)
-        h_0_attn_unsqueeze_11 = getattr(self, "h/0/attn/Unsqueeze_11")(N)
-        h_0_attn_concat_3 = getattr(self, "h/0/attn/Concat_3")(h_0_attn_unsqueeze_9, h_0_attn_unsqueeze_10, h_0_attn_unsqueeze_11)
-        h_0_attn_reshape_3 = getattr(self, "h/0/attn/Reshape_3")(h_0_attn_transpose_3, h_0_attn_concat_3)
-        initializers_onnx_initializer_11 = self.initializers.onnx_initializer_11
-        h_0_attn_c_proj_mat_mul = getattr(self, "h/0/attn/c_proj/MatMul")(h_0_attn_reshape_3, initializers_onnx_initializer_11)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+        h_0_attn_c_proj_mat_mul = torch.matmul(y, self.c_proj_MatMul)
         return h_0_attn_c_proj_mat_mul
 
 
@@ -131,7 +90,7 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, n_embd: int, attn_kwargs: dict, mlp_kwargs: dict):
         super().__init__()
-        # self.attn = AttnHead(n_embd, **attn_kwargs)
+        self.attn = AttnHead(n_embd, **attn_kwargs)
         self.mlp = MLP(**mlp_kwargs)
 
     def forward(self, x: torch.Tensor, pos_emb: torch.Tensor):
@@ -147,7 +106,13 @@ class StateModel(nn.Module):
         self.heads = nn.Sequential(
             Block(
                 n_embd=128,
-                attn_kwargs=dict(),
+                attn_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/0/attn/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_7,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_8,
+                    c_attn_MatMul=onnx_model.initializers.onnx_initializer_9,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_11,
+                ),
                 mlp_kwargs=dict(
                     layer_norm_Constant_1=getattr(onnx_model, "h/0/mlp/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_12,
@@ -162,7 +127,13 @@ class StateModel(nn.Module):
             ),
             Block(
                 n_embd=128,
-                attn_kwargs=dict(),
+                attn_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/1/attn/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_16,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_17,
+                    c_attn_MatMul=onnx_model.initializers.onnx_initializer_18,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_19,
+                ),
                 mlp_kwargs=dict(
                     layer_norm_Constant_1=getattr(onnx_model, "h/1/mlp/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_20,
@@ -177,7 +148,13 @@ class StateModel(nn.Module):
             ),
             Block(
                 n_embd=128,
-                attn_kwargs=dict(),
+                attn_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/2/attn/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_24,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_25,
+                    c_attn_MatMul=onnx_model.initializers.onnx_initializer_26,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_27,
+                ),
                 mlp_kwargs=dict(
                     layer_norm_Constant_1=getattr(onnx_model, "h/2/mlp/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_28,
@@ -192,7 +169,13 @@ class StateModel(nn.Module):
             ),
             Block(
                 n_embd=128,
-                attn_kwargs=dict(),
+                attn_kwargs=dict(
+                    layer_norm_Constant_1=getattr(onnx_model, "h/3/attn/layer_norm/Constant_1").value,
+                    layer_norm_weight=onnx_model.initializers.onnx_initializer_32,
+                    layer_norm_bias=onnx_model.initializers.onnx_initializer_33,
+                    c_attn_MatMul=onnx_model.initializers.onnx_initializer_34,
+                    c_proj_MatMul=onnx_model.initializers.onnx_initializer_35,
+                ),
                 mlp_kwargs=dict(
                     layer_norm_Constant_1=getattr(onnx_model, "h/3/mlp/layer_norm/Constant_1").value,
                     layer_norm_weight=onnx_model.initializers.onnx_initializer_36,
