@@ -110,8 +110,12 @@ if __name__ == "__main__":
     data_module = DataModule()
     controls_model = nn.Sequential(
         nn.Linear(4, 64),
+        nn.BatchNorm1d(64),
+        nn.Dropout(0.1),
         nn.ReLU(),
         nn.Linear(64, 64),
+        nn.BatchNorm1d(64),
+        nn.Dropout(0.1),
         nn.ReLU(),
         nn.Linear(64, 1),
     )
