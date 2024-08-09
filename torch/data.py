@@ -53,7 +53,8 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage: str = None):
         segments = []
-        for file in glob(f"{DATASET_PATH}/*.csv"):
+        self.files = glob(f"{DATASET_PATH}/*.csv")
+        for file in self.files:
             df = pd.read_csv(file)
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
