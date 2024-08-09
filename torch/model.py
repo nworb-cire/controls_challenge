@@ -24,15 +24,12 @@ class LightningModel(pl.LightningModule):
         bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
         self.bins = nn.Parameter(bins, requires_grad=False)
 
-    def encode(self, value: torch.Tensor) -> torch.Tensor:
-        value = self.clip(value)
+    def tokenize(self, value: torch.Tensor) -> torch.Tensor:
+        value = torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
         return torch.bucketize(value, self.bins, right=True)
 
-    def decode(self, token: torch.Tensor) -> torch.Tensor:
+    def detokenize(self, token: torch.Tensor) -> torch.Tensor:
         return self.bins[token.to(torch.long)]
-
-    def clip(self, value: torch.Tensor) -> torch.Tensor:
-        return torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
 
     def get_current_lataccel(
         self,
@@ -64,14 +61,14 @@ class LightningModel(pl.LightningModule):
     def rollout(self, inp):
         # mask controls
         inp[:, self.CONTEXT_WINDOW:, 0] = 0
-        inp[:, :, -1] = self.encode(inp[:, :, -1])
+        inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         for i in range(self.CONTEXT_WINDOW):
             predicted_tokens = self.get_current_lataccel(
                 inp[:, i:i+self.CONTEXT_WINDOW, :-1],
                 inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
             )
             control = self.controls_step(
-                self.decode(inp[:, [i+self.CONTEXT_WINDOW], -1]),
+                self.detokenize(inp[:, [i + self.CONTEXT_WINDOW], -1]),
                 None,
                 inp[:, i+self.CONTEXT_WINDOW, 1:-1],
                 None
@@ -83,6 +80,7 @@ class LightningModel(pl.LightningModule):
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
+        preds = self.detokenize(preds)  # FIXME: this affects the gradient for some reason
         loss = self.loss_fn(preds, targets)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -90,6 +88,7 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
+        preds = self.detokenize(preds)
         loss = self.loss_fn(preds, targets)
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
