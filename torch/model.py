@@ -106,6 +106,7 @@ class LightningModel(pl.LightningModule):
 
 
 if __name__ == "__main__":
+    pl.seed_everything(0)
     data_module = DataModule()
     controls_model = nn.Sequential(
         nn.Linear(4, 64),
@@ -117,8 +118,7 @@ if __name__ == "__main__":
     model = LightningModel("models/tinyphysics.onnx", controls_model)
 
     trainer = pl.Trainer(
-        max_epochs=10,
-        fast_dev_run=True,
+        max_epochs=2,
     )
     trainer.fit(model, datamodule=data_module)
 
