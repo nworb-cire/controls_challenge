@@ -63,8 +63,7 @@ class LightningModel(pl.LightningModule):
         jerk_cost = torch.mean(((preds[1:] - preds[:-1]) / DEL_T) ** 2)
         return lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER + jerk_cost
 
-    def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        states, tokens, exog, targets = batch
+    def rollout(self, states, tokens, exog, targets):
         states = torch.cat((
             states,
             torch.cat((
@@ -80,15 +79,21 @@ class LightningModel(pl.LightningModule):
             lataccel = self.decode(predicted_tokens)
             control = self.controls_model(lataccel)
             states[:, [i+self.CONTEXT_WINDOW], 0] = control
-        loss = self.loss_fn(states[:, self.CONTEXT_WINDOW:, 0], targets)
+        return states[:, self.CONTEXT_WINDOW:, 0]
+
+    def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
+        preds = self.rollout(*batch)
+        targets = batch[-1]
+        loss = self.loss_fn(preds, targets)
         self.log("train_loss", loss)
         return loss
 
-    # def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-    #     predicted_tokens = self.rollout(*batch)
-    #     loss = self.loss_fn(predicted_tokens, batch[-1])
-    #     self.log("val_loss", loss)
-    #     return loss
+    def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
+        preds = self.rollout(*batch)
+        targets = batch[-1]
+        loss = self.loss_fn(preds, targets)
+        self.log("val_loss", loss)
+        return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.Adam(self.controls_model.parameters(), lr=1e-3)
