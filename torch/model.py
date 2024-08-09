@@ -53,7 +53,7 @@ class LightningModel(pl.LightningModule):
         return token
 
     def controls_step(self, target_lataccel, current_lataccel, state, future_plan):
-        inp = torch.cat([target_lataccel, state[:, 1:]], dim=-1)
+        inp = torch.cat([target_lataccel, state], dim=-1)
         return self.controls_model(inp)
 
     def loss_fn(self, preds, targets):
@@ -61,38 +61,35 @@ class LightningModel(pl.LightningModule):
         jerk_cost = torch.mean(((preds[1:] - preds[:-1]) / DEL_T) ** 2)
         return lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER + jerk_cost
 
-    def rollout(self, states, tokens, exog, targets):
-        states = torch.cat((
-            states,
-            torch.cat((
-                torch.zeros(exog.size(0), exog.size(1), 1, device=exog.device),
-                exog,
-            ), dim=-1),
-        ), dim=1)
-        tokens = torch.cat((tokens, torch.zeros_like(tokens)), dim=-1)
-        tokens = self.encode(tokens)
+    def rollout(self, inp):
+        # mask controls
+        inp[:, self.CONTEXT_WINDOW:, 0] = 0
+        inp[:, :, -1] = self.encode(inp[:, :, -1])
         for i in range(self.CONTEXT_WINDOW):
-            predicted_tokens = self.get_current_lataccel(states[:, i:i+self.CONTEXT_WINDOW, :], tokens[:, i:i+self.CONTEXT_WINDOW])
-            tokens[:, [i+self.CONTEXT_WINDOW]] = predicted_tokens
+            predicted_tokens = self.get_current_lataccel(
+                inp[:, i:i+self.CONTEXT_WINDOW, :-1],
+                inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
+            )
             control = self.controls_step(
-                self.decode(targets[:, [i+self.CONTEXT_WINDOW]]),
+                self.decode(inp[:, [i+self.CONTEXT_WINDOW], -1]),
                 None,
-                states[:, i+self.CONTEXT_WINDOW, :],
+                inp[:, i+self.CONTEXT_WINDOW, 1:-1],
                 None
             )
-            states[:, [i+self.CONTEXT_WINDOW], 0] = control
-        return states[:, self.CONTEXT_WINDOW:, 0]  # FIXME: getting autograd error when returning tokens
+            inp[:, [i+self.CONTEXT_WINDOW], -1] = predicted_tokens.to(torch.float32)
+            inp[:, [i+self.CONTEXT_WINDOW], 0] = control
+        return inp[:, self.CONTEXT_WINDOW:, -1]
 
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        preds = self.rollout(*batch)
-        targets = batch[-1]
+        targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
+        preds = self.rollout(batch)
         loss = self.loss_fn(preds, targets)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        preds = self.rollout(*batch)
-        targets = batch[-1]
+        targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
+        preds = self.rollout(batch)
         loss = self.loss_fn(preds, targets)
         self.log("val_loss", loss)
         return loss

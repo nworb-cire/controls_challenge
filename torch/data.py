@@ -28,12 +28,7 @@ class LatAccelDataset(Dataset):
         seq_idx = idx // (self.SEQUENCE_LENGTH - self.CONTEXT_SIZE * 2)
         start_idx = idx % (self.SEQUENCE_LENGTH - self.CONTEXT_SIZE * 2)
 
-        states = self.data[seq_idx, start_idx:start_idx + self.CONTEXT_SIZE, :-1]
-        tokens = self.data[seq_idx, start_idx:start_idx + self.CONTEXT_SIZE, -1]
-        exog = self.data[seq_idx, start_idx + self.CONTEXT_SIZE:start_idx + self.CONTEXT_SIZE * 2, 1:-1]
-        target = self.data[seq_idx, start_idx + self.CONTEXT_SIZE:start_idx + self.CONTEXT_SIZE * 2, -1]
-
-        return states, tokens, exog, target
+        return self.data[seq_idx, start_idx:start_idx + self.CONTEXT_SIZE * 2, :]
 
 
 class DataModule(pl.LightningDataModule):
