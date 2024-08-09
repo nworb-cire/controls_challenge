@@ -10,6 +10,41 @@ from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout
 
 
+class ControlsModel(pl.LightningModule):
+    def __init__(
+        self,
+        input_size: int = 4,
+        state_dim: int = 64,
+        hidden_dim: int = 64,
+        out_dim: int = 1,
+    ):
+        super().__init__()
+        self.state_dim = state_dim
+        self.fc1 = nn.Linear(input_size + state_dim, hidden_dim)
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.drop1 = nn.Dropout(0.1)
+
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.bn2 = nn.BatchNorm1d(hidden_dim)
+        self.drop2 = nn.Dropout(0.1)
+
+        self.fc3 = nn.Linear(hidden_dim, out_dim + state_dim)
+
+    def forward(self, x, st):
+        x = torch.cat([x, st], dim=-1)
+        x = F.tanh(self.fc1(x))
+        x = self.bn1(x)
+        x = self.drop1(x)
+
+        x = x + F.tanh(self.fc2(x))
+        x = self.bn2(x)
+        x = self.drop2(x)
+
+        x = F.tanh(self.fc3(x))
+        x, st = x.split([1, self.state_dim], dim=-1)
+        return x, st
+
+
 class LightningModel(pl.LightningModule):
     CONTEXT_WINDOW = 20
 
@@ -56,9 +91,9 @@ class LightningModel(pl.LightningModule):
         token = torch.multinomial(probs, 1)  # B x 1
         return token
 
-    def controls_step(self, target_lataccel, current_lataccel, state, future_plan):
+    def controls_step(self, target_lataccel, current_lataccel, state, future_plan, st):
         inp = torch.cat([target_lataccel, state], dim=-1)
-        return self.controls_model(inp)
+        return self.controls_model(inp, st)
 
     def loss_fn(self, preds, targets):
         lat_accel_cost = torch.mean((preds - targets) ** 2)
@@ -69,16 +104,18 @@ class LightningModel(pl.LightningModule):
         # mask controls
         inp[:, self.CONTEXT_WINDOW:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
+        st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
         for i in range(self.CONTEXT_WINDOW):
             predicted_tokens = self.get_current_lataccel(
                 inp[:, i:i+self.CONTEXT_WINDOW, :-1],
                 inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
             )
-            control = self.controls_step(
+            control, st = self.controls_step(
                 self.detokenize(predicted_tokens.to(torch.float32)),
                 None,
                 inp[:, i+self.CONTEXT_WINDOW, 1:-1],
-                None
+                None,
+                st,
             )
             inp[:, [i+self.CONTEXT_WINDOW], -1] = predicted_tokens.to(torch.float32)
             inp[:, [i+self.CONTEXT_WINDOW], 0] = control
@@ -95,14 +132,16 @@ class LightningModel(pl.LightningModule):
     def save(self):
         torch.onnx.export(
             self.controls_model,
-            torch.randn(2, 4, device=self.device),
+            (torch.randn(2, 4, device=self.device), torch.randn(2, self.controls_model.state_dim, device=self.device)),
             "models/tinyphysics_controls.onnx",
             verbose=True,
-            input_names=["input"],
-            output_names=["output"],
+            input_names=["input", "state"],
+            output_names=["output", "state1"],
             dynamic_axes={
                 "input": {0: "b"},
+                "state": {0: "b"},
                 "output": {0: "b"},
+                "state1": {0: "b"},
             }
         )
 
@@ -127,23 +166,7 @@ class LightningModel(pl.LightningModule):
 if __name__ == "__main__":
     pl.seed_everything(0)
     data_module = DataModule()
-    model = LightningModel(
-        "models/tinyphysics.onnx",
-        nn.Sequential(
-            nn.Linear(4, 64),
-            nn.BatchNorm1d(64),
-            nn.Dropout(0.1),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.BatchNorm1d(64),
-            nn.Dropout(0.1),
-            nn.Linear(64, 64),
-            nn.BatchNorm1d(64),
-            nn.Dropout(0.1),
-            nn.Tanh(),
-            nn.Linear(64, 1),
-        )
-    )
+    model = LightningModel("models/tinyphysics.onnx", ControlsModel())
 
     trainer = pl.Trainer(
         max_epochs=2,
