@@ -63,46 +63,32 @@ class LightningModel(pl.LightningModule):
         jerk_cost = torch.mean(((preds[1:] - preds[:-1]) / DEL_T) ** 2)
         return lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER + jerk_cost
 
-    def rollout(self, states, tokens, exog, targets):
-        tokens = self.encode(tokens)
-        new_tokens = []
-        steer_commands = []
-        for i in range(self.CONTEXT_WINDOW):
-            tokens_ = torch.concat((
-                tokens,
-                *new_tokens,
-            ), dim=1)
-            if i == 0:
-                states_ = states
-            else:
-                states_ = torch.concat((
-                    states,
-                    torch.concat((
-                        torch.stack(steer_commands, dim=1),  # B x i x 1
-                        exog[:, :i, :],  # B x i x 3
-                    ), dim=-1)  # B x i x 4
-                ), dim=1)  # B x (T + i) x 4
-            current_token = self.get_current_lataccel(
-                states_[:, i:, :],
-                tokens_[:, i:],
-            )
-            new_tokens.append(current_token)
-            current_lataccel = self.decode(current_token)
-            steer_command = self.controls_step(current_lataccel, targets[:, [i]], exog[:, i, :], None)
-            steer_commands.append(steer_command)
-        return torch.concat(new_tokens, dim=1)
-
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        predicted_tokens = self.rollout(*batch)
-        loss = self.loss_fn(predicted_tokens, batch[-1])
+        states, tokens, exog, targets = batch
+        states = torch.cat((
+            states,
+            torch.cat((
+                torch.zeros(exog.size(0), exog.size(1), 1, device=exog.device),
+                exog,
+            ), dim=-1),
+        ), dim=1)
+        tokens = torch.cat((tokens, torch.zeros_like(tokens)), dim=-1)
+        tokens = self.encode(tokens)
+        for i in range(self.CONTEXT_WINDOW):
+            predicted_tokens = self.get_current_lataccel(states[:, i:i+self.CONTEXT_WINDOW, :], tokens[:, i:i+self.CONTEXT_WINDOW])
+            tokens[:, [i+self.CONTEXT_WINDOW]] = predicted_tokens
+            lataccel = self.decode(predicted_tokens)
+            control = self.controls_model(lataccel)
+            states[:, [i+self.CONTEXT_WINDOW], 0] = control
+        loss = self.loss_fn(states[:, self.CONTEXT_WINDOW:, 0], targets)
         self.log("train_loss", loss)
         return loss
 
-    def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        predicted_tokens = self.rollout(*batch)
-        loss = self.loss_fn(predicted_tokens, batch[-1])
-        self.log("val_loss", loss)
-        return loss
+    # def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
+    #     predicted_tokens = self.rollout(*batch)
+    #     loss = self.loss_fn(predicted_tokens, batch[-1])
+    #     self.log("val_loss", loss)
+    #     return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         optimizer = torch.optim.Adam(self.controls_model.parameters(), lr=1e-3)
