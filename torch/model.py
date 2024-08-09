@@ -75,7 +75,7 @@ class LightningModel(pl.LightningModule):
                 inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
             )
             control = self.controls_step(
-                self.detokenize(inp[:, [i + self.CONTEXT_WINDOW], -1]),
+                self.detokenize(predicted_tokens.to(torch.float32)),
                 None,
                 inp[:, i+self.CONTEXT_WINDOW, 1:-1],
                 None
