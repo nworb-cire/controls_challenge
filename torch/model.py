@@ -7,7 +7,7 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch import nn
 
 from data import DataModule
-from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE
+from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout
 
 
 class LightningModel(pl.LightningModule):
@@ -92,12 +92,28 @@ class LightningModel(pl.LightningModule):
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
-    def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
-        preds = self.rollout(batch)
-        preds = self.detokenize_differentiable(preds)
-        loss = self.loss_fn(preds, targets)
-        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+    def save(self):
+        torch.onnx.export(
+            self.controls_model,
+            torch.randn(2, 4),
+            "models/tinyphysics_controls.onnx",
+            verbose=True,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes={
+                "input": {0: "b"},
+                "output": {0: "b"},
+            }
+        )
+
+    def validation_step(self, file) -> STEP_OUTPUT:
+        cost, _, _ = run_rollout(
+            data_path=file,
+            controller_type="nn",
+            model_path="models/tinyphysics.onnx",
+        )
+        loss = cost["total_cost"]
+        self.log("val_loss", loss, batch_size=1, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
@@ -108,36 +124,25 @@ class LightningModel(pl.LightningModule):
 if __name__ == "__main__":
     pl.seed_everything(0)
     data_module = DataModule()
-    controls_model = nn.Sequential(
-        nn.Linear(4, 64),
-        nn.BatchNorm1d(64),
-        nn.Dropout(0.1),
-        nn.Tanh(),
-        nn.Linear(64, 64),
-        nn.BatchNorm1d(64),
-        nn.Dropout(0.1),
-        nn.Linear(64, 64),
-        nn.BatchNorm1d(64),
-        nn.Dropout(0.1),
-        nn.Tanh(),
-        nn.Linear(64, 1),
+    model = LightningModel(
+        "models/tinyphysics.onnx",
+        nn.Sequential(
+            nn.Linear(4, 64),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.1),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.1),
+            nn.Linear(64, 64),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.1),
+            nn.Tanh(),
+            nn.Linear(64, 1),
+        )
     )
-    model = LightningModel("models/tinyphysics.onnx", controls_model)
 
     trainer = pl.Trainer(
         max_epochs=2,
     )
     trainer.fit(model, datamodule=data_module)
-
-    torch.onnx.export(
-        controls_model,
-        torch.randn(2, 4),
-        "models/tinyphysics_controls.onnx",
-        verbose=True,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={
-            "input": {0: "b"},
-            "output": {0: "b"},
-        }
-    )

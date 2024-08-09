@@ -67,13 +67,10 @@ class DataModule(pl.LightningDataModule):
         # Concatenate: (n_sequences, sequence_length, n_features)
         data = np.concatenate(segments, axis=0)
 
-        train_size = int(data.shape[0] * 0.9)
-        print(f"Train size: {train_size:,}, Val size: {data.shape[0] - train_size:,}")
-        self.train = LatAccelDataset(data[:train_size, :, :])
-        self.val = LatAccelDataset(data[train_size:, :, :])
+        self.train = LatAccelDataset(data)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train, batch_size=1024, shuffle=True)
 
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.val, batch_size=1024)
+        return self.files
