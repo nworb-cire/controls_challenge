@@ -84,14 +84,14 @@ class LightningModel(pl.LightningModule):
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
         loss = self.loss_fn(preds, targets)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
         loss = self.loss_fn(preds, targets)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
@@ -111,8 +111,7 @@ if __name__ == "__main__":
     model = LightningModel("models/tinyphysics.onnx", controls_model)
 
     trainer = pl.Trainer(
-        max_epochs=1,
-        fast_dev_run=True,
+        max_epochs=10,
     )
     trainer.fit(model, datamodule=data_module)
 
