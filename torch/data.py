@@ -57,7 +57,9 @@ class DataModule(pl.LightningDataModule):
             df = pd.read_csv(file)
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
-            df = df.dropna()
+            # Allow 20 rows with null values
+            not_na_rows = df[df["steerCommand"].notna()].index.max()
+            df = df.iloc[:not_na_rows + 21]
             # add batch dimension
             val = df.values[np.newaxis]
             segments.append(val)
