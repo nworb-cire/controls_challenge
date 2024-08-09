@@ -31,6 +31,13 @@ class LightningModel(pl.LightningModule):
     def detokenize(self, token: torch.Tensor) -> torch.Tensor:
         return self.bins[token.to(torch.long)]
 
+    def detokenize_differentiable(self, token: torch.Tensor) -> torch.Tensor:
+        source_min, source_max = 0, 1024
+        target_min, target_max = -5, 5
+
+        # Perform the linear mapping
+        return (token - source_min) * (target_max - target_min) / (source_max - source_min) + target_min
+
     def get_current_lataccel(
         self,
         states,
@@ -80,7 +87,7 @@ class LightningModel(pl.LightningModule):
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
-        preds = self.detokenize(preds)  # FIXME: this affects the gradient for some reason
+        preds = self.detokenize_differentiable(preds)
         loss = self.loss_fn(preds, targets)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -88,7 +95,7 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
         preds = self.rollout(batch)
-        preds = self.detokenize(preds)
+        preds = self.detokenize_differentiable(preds)
         loss = self.loss_fn(preds, targets)
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -111,6 +118,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         max_epochs=10,
+        fast_dev_run=True,
     )
     trainer.fit(model, datamodule=data_module)
 
