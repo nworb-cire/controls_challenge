@@ -21,17 +21,15 @@ class LightningModel(pl.LightningModule):
         super().__init__()
         self.state_model = convert(onnx_model_path)
         self.controls_model = controls_model
-        self.bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
-
-    def setup(self, stage: str) -> None:
-        self.bins = self.bins.to(self.device)
+        bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
+        self.bins = nn.Parameter(bins, requires_grad=False)
 
     def encode(self, value: torch.Tensor) -> torch.Tensor:
         value = self.clip(value)
         return torch.bucketize(value, self.bins, right=True)
 
     def decode(self, token: torch.Tensor) -> torch.Tensor:
-        return self.bins[token]
+        return self.bins[token.to(torch.long)]
 
     def clip(self, value: torch.Tensor) -> torch.Tensor:
         return torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
@@ -55,8 +53,8 @@ class LightningModel(pl.LightningModule):
         return token
 
     def controls_step(self, target_lataccel, current_lataccel, state, future_plan):
-        input_ = torch.cat([target_lataccel, state], dim=-1)
-        return self.controls_model(input_)
+        inp = torch.cat([target_lataccel, state[:, 1:]], dim=-1)
+        return self.controls_model(inp)
 
     def loss_fn(self, preds, targets):
         lat_accel_cost = torch.mean((preds - targets) ** 2)
@@ -76,10 +74,14 @@ class LightningModel(pl.LightningModule):
         for i in range(self.CONTEXT_WINDOW):
             predicted_tokens = self.get_current_lataccel(states[:, i:i+self.CONTEXT_WINDOW, :], tokens[:, i:i+self.CONTEXT_WINDOW])
             tokens[:, [i+self.CONTEXT_WINDOW]] = predicted_tokens
-            lataccel = self.decode(predicted_tokens)
-            control = self.controls_model(lataccel)
+            control = self.controls_step(
+                self.decode(targets[:, [i+self.CONTEXT_WINDOW]]),
+                None,
+                states[:, i+self.CONTEXT_WINDOW, :],
+                None
+            )
             states[:, [i+self.CONTEXT_WINDOW], 0] = control
-        return states[:, self.CONTEXT_WINDOW:, 0]
+        return states[:, self.CONTEXT_WINDOW:, 0]  # FIXME: getting autograd error when returning tokens
 
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
         preds = self.rollout(*batch)
@@ -103,7 +105,7 @@ class LightningModel(pl.LightningModule):
 if __name__ == "__main__":
     data_module = DataModule()
     controls_model = nn.Sequential(
-        nn.Linear(1, 64),
+        nn.Linear(4, 64),
         nn.ReLU(),
         nn.Linear(64, 64),
         nn.ReLU(),
@@ -119,7 +121,7 @@ if __name__ == "__main__":
 
     torch.onnx.export(
         controls_model,
-        torch.randn(2, 1),
+        torch.randn(2, 4),
         "models/tinyphysics_controls.onnx",
         verbose=True,
         input_names=["input"],
