@@ -95,7 +95,7 @@ class LightningModel(pl.LightningModule):
     def save(self):
         torch.onnx.export(
             self.controls_model,
-            torch.randn(2, 4),
+            torch.randn(2, 4, device=self.device),
             "models/tinyphysics_controls.onnx",
             verbose=True,
             input_names=["input"],
@@ -105,6 +105,9 @@ class LightningModel(pl.LightningModule):
                 "output": {0: "b"},
             }
         )
+
+    def on_validation_epoch_start(self) -> None:
+        self.save()
 
     def validation_step(self, file) -> STEP_OUTPUT:
         cost, _, _ = run_rollout(
