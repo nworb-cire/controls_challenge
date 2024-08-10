@@ -52,8 +52,10 @@ class LightningModel(pl.LightningModule):
         self,
         onnx_model_path: str,
         controls_model: torch.nn.Module,
+        sequence_length: int = 100,
     ):
         super().__init__()
+        self.sequence_length = sequence_length
         self.state_model = convert(onnx_model_path)
         self.controls_model = controls_model
         bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
@@ -105,7 +107,7 @@ class LightningModel(pl.LightningModule):
         inp[:, self.CONTEXT_WINDOW:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
-        for i in range(self.CONTEXT_WINDOW):
+        for i in range(self.sequence_length):
             predicted_tokens = self.get_current_lataccel(
                 inp[:, i:i+self.CONTEXT_WINDOW, :-1],
                 inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
@@ -169,6 +171,7 @@ if __name__ == "__main__":
     model = LightningModel("models/tinyphysics.onnx", ControlsModel())
 
     trainer = pl.Trainer(
-        max_epochs=2,
+        max_epochs=10,
+        val_check_interval=250,
     )
     trainer.fit(model, datamodule=data_module)
