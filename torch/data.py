@@ -1,3 +1,4 @@
+import logging
 import os
 import urllib.request
 import zipfile
@@ -53,6 +54,9 @@ class DataModule(pl.LightningDataModule):
         self.files = glob(f"{DATASET_PATH}/*.csv")
         for file in self.files:
             df = pd.read_csv(file)
+            if len(df) < COST_END_IDX:
+                logging.warning(f"Skipping {file} due to insufficient length")
+                continue
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
             df = df.iloc[CONTROL_START_IDX - CONTEXT_LENGTH:COST_END_IDX]
