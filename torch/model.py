@@ -7,7 +7,8 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch import nn
 
 from data import DataModule
-from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout
+from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
+    CONTROL_START_IDX, VOCAB_SIZE
 
 
 class ControlsModel(pl.LightningModule):
@@ -46,19 +47,15 @@ class ControlsModel(pl.LightningModule):
 
 
 class LightningModel(pl.LightningModule):
-    CONTEXT_WINDOW = 20
-
     def __init__(
         self,
         onnx_model_path: str,
         controls_model: torch.nn.Module,
-        sequence_length: int = 100,
     ):
         super().__init__()
-        self.sequence_length = sequence_length
         self.state_model = convert(onnx_model_path)
         self.controls_model = controls_model
-        bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], 1024), dtype=torch.float32)
+        bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], VOCAB_SIZE), dtype=torch.float32)
         self.bins = nn.Parameter(bins, requires_grad=False)
 
     def tokenize(self, value: torch.Tensor) -> torch.Tensor:
@@ -69,8 +66,8 @@ class LightningModel(pl.LightningModule):
         return self.bins[token.to(torch.long)]
 
     def detokenize_differentiable(self, token: torch.Tensor) -> torch.Tensor:
-        source_min, source_max = 0, 1024
-        target_min, target_max = -5, 5
+        source_min, source_max = 0, VOCAB_SIZE
+        target_min, target_max = LATACCEL_RANGE
 
         # Perform the linear mapping
         return (token - source_min) * (target_max - target_min) / (source_max - source_min) + target_min
@@ -104,27 +101,27 @@ class LightningModel(pl.LightningModule):
 
     def rollout(self, inp):
         # mask controls
-        inp[:, self.CONTEXT_WINDOW:, 0] = 0
+        inp[:, CONTEXT_LENGTH:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
-        for i in range(self.sequence_length):
+        for i in range(COST_END_IDX - CONTROL_START_IDX):
             predicted_tokens = self.get_current_lataccel(
-                inp[:, i:i+self.CONTEXT_WINDOW, :-1],
-                inp[:, i:i+self.CONTEXT_WINDOW, -1].to(torch.long),
+                inp[:, i:i+CONTEXT_LENGTH, :-1],
+                inp[:, i:i+CONTEXT_LENGTH, -1].to(torch.long),
             )
             control, st = self.controls_step(
                 self.detokenize(predicted_tokens.to(torch.float32)),
                 None,
-                inp[:, i+self.CONTEXT_WINDOW, 1:-1],
+                inp[:, i+CONTEXT_LENGTH, 1:-1],
                 None,
                 st,
             )
-            inp[:, [i+self.CONTEXT_WINDOW], -1] = predicted_tokens.to(torch.float32)
-            inp[:, [i+self.CONTEXT_WINDOW], 0] = control
-        return inp[:, self.CONTEXT_WINDOW:, -1]
+            inp[:, [i+CONTEXT_LENGTH], -1] = predicted_tokens.to(torch.float32)
+            inp[:, [i+CONTEXT_LENGTH], 0] = control
+        return inp[:, CONTEXT_LENGTH:, -1]
 
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
-        targets = batch[:, self.CONTEXT_WINDOW:, -1].clone()
+        targets = batch[:, CONTEXT_LENGTH:, -1].clone()
         preds = self.rollout(batch)
         preds = self.detokenize_differentiable(preds)
         loss = self.loss_fn(preds, targets)
