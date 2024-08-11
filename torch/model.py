@@ -24,16 +24,23 @@ class ControlsModel(pl.LightningModule):
         # target lataccel, current lataccel, state, future plan lataccel
         self.input_size = 2 + len(State._fields) + FUTURE_PLAN_LENGTH
         self.state_dim = state_dim
-        self.fc1 = nn.Linear(self.input_size + state_dim, hidden_dim, bias=False)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.fc3 = nn.Linear(hidden_dim, out_dim + state_dim, bias=False)
+        self.network = nn.Sequential(
+            nn.Linear(self.input_size + state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, out_dim + state_dim),
+        )
 
     def forward(self, x, st):
         x = torch.cat([x, st], dim=-1)
-        x = F.tanh(self.fc1(x))
-        x = x + F.tanh(self.fc2(x))
-        x = F.tanh(self.fc3(x))
+        x = self.network(x)
         x, st = x.split([1, self.state_dim], dim=-1)
+        x = torch.clamp(x, -1, 1)
         return x, st
 
 
