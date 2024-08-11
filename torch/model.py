@@ -128,7 +128,7 @@ class LightningModel(pl.LightningModule):
                 torch.randn(2, self.controls_model.state_dim, device=self.device),
             ),
             "models/tinyphysics_controls.onnx",
-            verbose=True,
+            verbose=False,
             input_names=["input", "state"],
             output_names=["output", "state1"],
             dynamic_axes={
