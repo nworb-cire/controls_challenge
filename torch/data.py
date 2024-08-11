@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset
 
-from tinyphysics import DATASET_PATH, DATASET_URL, CONTEXT_LENGTH, CONTROL_START_IDX
+from tinyphysics import DATASET_PATH, DATASET_URL, CONTEXT_LENGTH, CONTROL_START_IDX, COST_END_IDX
 
 
 class LatAccelDataset(Dataset):
@@ -19,13 +19,10 @@ class LatAccelDataset(Dataset):
         self.data = torch.tensor(data, dtype=torch.float32)
 
     def __len__(self):
-        return self.data.shape[0] * (self.data.shape[1] - CONTEXT_LENGTH - CONTROL_START_IDX)
+        return self.data.shape[0]
 
     def __getitem__(self, idx):
-        seq_idx = idx // (self.data.shape[1] - CONTEXT_LENGTH - CONTROL_START_IDX)
-        start_idx = idx % (self.data.shape[1] - CONTEXT_LENGTH - CONTROL_START_IDX)
-
-        return self.data[seq_idx, start_idx:start_idx + CONTEXT_LENGTH + CONTROL_START_IDX, :]
+        return self.data[idx, :, :]
 
 
 class DataModule(pl.LightningDataModule):
@@ -58,9 +55,7 @@ class DataModule(pl.LightningDataModule):
             df = pd.read_csv(file)
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
-            # Allow 20 rows with null values
-            not_na_rows = df[df["steerCommand"].notna()].index.max()
-            df = df.iloc[:not_na_rows + CONTROL_START_IDX + 1]
+            df = df.iloc[CONTROL_START_IDX - CONTEXT_LENGTH:COST_END_IDX]
             # add batch dimension
             val = df.values[np.newaxis]
             segments.append(val)

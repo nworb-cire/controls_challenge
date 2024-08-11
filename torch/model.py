@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from onnx2torch import convert
 from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch import nn
+from tqdm import trange
 
 from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
@@ -170,5 +171,6 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=10,
         val_check_interval=250,
+        fast_dev_run=True,
     )
     trainer.fit(model, datamodule=data_module)
