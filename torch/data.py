@@ -71,7 +71,7 @@ class DataModule(pl.LightningDataModule):
         self.train = LatAccelDataset(data)
 
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train, batch_size=4096, shuffle=True, num_workers=7)
+        return torch.utils.data.DataLoader(self.train, batch_size=1024, shuffle=True, num_workers=7)
 
     def val_dataloader(self):
         return self.files[:100]
