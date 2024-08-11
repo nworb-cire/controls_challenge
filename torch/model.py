@@ -20,8 +20,8 @@ class ControlsModel(pl.LightningModule):
         out_dim: int = 1,
     ):
         super().__init__()
-        # target lataccel, current lataccel, state, future plan
-        self.input_size = 2 + len(State._fields) + len(FuturePlan._fields) * FUTURE_PLAN_LENGTH
+        # target lataccel, current lataccel, state, future plan lataccel
+        self.input_size = 2 + len(State._fields) + FUTURE_PLAN_LENGTH
         self.state_dim = state_dim
         self.fc1 = nn.Linear(self.input_size + state_dim, hidden_dim, bias=False)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=False)
@@ -87,7 +87,7 @@ class LightningModel(pl.LightningModule):
         return token
 
     def controls_step(self, target_lataccel, current_lataccel, state, future_plan, st):
-        inp = torch.cat([target_lataccel, current_lataccel, state, future_plan.reshape(future_plan.size(0), -1)], dim=-1)
+        inp = torch.cat([target_lataccel, current_lataccel, state, future_plan[:, :, -1]], dim=-1)
         return self.controls_model(inp, st)
 
     def loss_fn(self, preds, targets):
@@ -170,6 +170,5 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         max_epochs=10,
-        val_check_interval=5,
     )
     trainer.fit(model, datamodule=data_module)
