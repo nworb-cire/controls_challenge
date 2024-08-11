@@ -13,6 +13,8 @@ from torch.utils.data import Dataset
 
 from tinyphysics import DATASET_PATH, DATASET_URL, CONTEXT_LENGTH, CONTROL_START_IDX, COST_END_IDX
 
+FUTURE_PLAN_LENGTH = 20
+
 
 class LatAccelDataset(Dataset):
     def __init__(self, data):
@@ -54,12 +56,12 @@ class DataModule(pl.LightningDataModule):
         self.files = glob(f"{DATASET_PATH}/*.csv")
         for file in self.files:
             df = pd.read_csv(file)
-            if len(df) < COST_END_IDX:
+            if len(df) < COST_END_IDX + FUTURE_PLAN_LENGTH:
                 logging.warning(f"Skipping {file} due to insufficient length")
                 continue
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
-            df = df.iloc[CONTROL_START_IDX - CONTEXT_LENGTH:COST_END_IDX]
+            df = df.iloc[CONTROL_START_IDX - CONTEXT_LENGTH:COST_END_IDX + FUTURE_PLAN_LENGTH]
             # add batch dimension
             val = df.values[np.newaxis]
             segments.append(val)

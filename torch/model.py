@@ -7,31 +7,25 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch import nn
 from tqdm import trange
 
-from data import DataModule
+from data import DataModule, FUTURE_PLAN_LENGTH
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
-    CONTROL_START_IDX, VOCAB_SIZE
+    CONTROL_START_IDX, VOCAB_SIZE, FuturePlan, State
 
 
 class ControlsModel(pl.LightningModule):
     def __init__(
         self,
-        input_size: int = 5,
         state_dim: int = 64,
         hidden_dim: int = 64,
         out_dim: int = 1,
     ):
         super().__init__()
-        self.input_size = input_size
+        # target lataccel, current lataccel, state, future plan
+        self.input_size = 2 + len(State._fields) + len(FuturePlan._fields) * FUTURE_PLAN_LENGTH
         self.state_dim = state_dim
-        self.fc1 = nn.Linear(input_size + state_dim, hidden_dim)
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
-        self.drop1 = nn.Dropout(0.1)
-
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.bn2 = nn.BatchNorm1d(hidden_dim)
-        self.drop2 = nn.Dropout(0.1)
-
-        self.fc3 = nn.Linear(hidden_dim, out_dim + state_dim)
+        self.fc1 = nn.Linear(self.input_size + state_dim, hidden_dim, bias=False)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.fc3 = nn.Linear(hidden_dim, out_dim + state_dim, bias=False)
 
     def forward(self, x, st):
         x = torch.cat([x, st], dim=-1)
@@ -93,7 +87,7 @@ class LightningModel(pl.LightningModule):
         return token
 
     def controls_step(self, target_lataccel, current_lataccel, state, future_plan, st):
-        inp = torch.cat([target_lataccel, current_lataccel, state], dim=-1)
+        inp = torch.cat([target_lataccel, current_lataccel, state, future_plan.reshape(future_plan.size(0), -1)], dim=-1)
         return self.controls_model(inp, st)
 
     def loss_fn(self, preds, targets):
@@ -113,11 +107,11 @@ class LightningModel(pl.LightningModule):
                 inp[:, i:i+CONTEXT_LENGTH, -1].to(torch.long),
             )
             control, st = self.controls_step(
-                self.detokenize(predicted_tokens.to(torch.float32)),
-                self.detokenize(inp[:, [i+CONTEXT_LENGTH-1], -1]),
-                inp[:, i+CONTEXT_LENGTH, 1:-1],
-                None,
-                st,
+                target_lataccel=self.detokenize(predicted_tokens.to(torch.float32)),
+                current_lataccel=self.detokenize(inp[:, [i+CONTEXT_LENGTH-1], -1]),
+                state=inp[:, i+CONTEXT_LENGTH, 1:-1],
+                future_plan=inp[:, i+CONTEXT_LENGTH:i+CONTEXT_LENGTH+FUTURE_PLAN_LENGTH, 1:],
+                st=st,
             )
             inp[:, [i+CONTEXT_LENGTH], -1] = predicted_tokens.to(torch.float32)
             inp[:, [i+CONTEXT_LENGTH], 0] = control
