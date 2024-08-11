@@ -11,7 +11,7 @@ class Controller(BaseController):
         self.state = np.zeros((1, self.d_state), dtype=np.float32)
 
     def update(self, target_lataccel: float, current_lataccel: float, state, future_plan):
-        inp = np.array([target_lataccel, *state], dtype=np.float32)
+        inp = np.array([target_lataccel, current_lataccel, *state], dtype=np.float32)
         inp = inp[np.newaxis, :]
         out, self.state = self.sess.run(["output", "state1"], {"input": inp, "state": self.state})
         return out[0, 0]

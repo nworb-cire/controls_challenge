@@ -15,12 +15,13 @@ from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_ro
 class ControlsModel(pl.LightningModule):
     def __init__(
         self,
-        input_size: int = 4,
+        input_size: int = 5,
         state_dim: int = 64,
         hidden_dim: int = 64,
         out_dim: int = 1,
     ):
         super().__init__()
+        self.input_size = input_size
         self.state_dim = state_dim
         self.fc1 = nn.Linear(input_size + state_dim, hidden_dim)
         self.bn1 = nn.BatchNorm1d(hidden_dim)
@@ -92,7 +93,7 @@ class LightningModel(pl.LightningModule):
         return token
 
     def controls_step(self, target_lataccel, current_lataccel, state, future_plan, st):
-        inp = torch.cat([target_lataccel, state], dim=-1)
+        inp = torch.cat([target_lataccel, current_lataccel, state], dim=-1)
         return self.controls_model(inp, st)
 
     def loss_fn(self, preds, targets):
@@ -113,7 +114,7 @@ class LightningModel(pl.LightningModule):
             )
             control, st = self.controls_step(
                 self.detokenize(predicted_tokens.to(torch.float32)),
-                None,
+                self.detokenize(inp[:, [i+CONTEXT_LENGTH-1], -1]),
                 inp[:, i+CONTEXT_LENGTH, 1:-1],
                 None,
                 st,
@@ -134,7 +135,10 @@ class LightningModel(pl.LightningModule):
     def save(self):
         torch.onnx.export(
             self.controls_model,
-            (torch.randn(2, 4, device=self.device), torch.randn(2, self.controls_model.state_dim, device=self.device)),
+            (
+                torch.randn(2, self.controls_model.input_size, device=self.device),
+                torch.randn(2, self.controls_model.state_dim, device=self.device),
+            ),
             "models/tinyphysics_controls.onnx",
             verbose=True,
             input_names=["input", "state"],
