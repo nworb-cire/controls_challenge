@@ -105,7 +105,8 @@ class LightningModel(pl.LightningModule):
         inp[:, CONTEXT_LENGTH:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
-        for i in range(COST_END_IDX - CONTROL_START_IDX):
+        pbar = trange(COST_END_IDX - CONTROL_START_IDX, desc="Rollout")
+        for i in pbar:
             predicted_tokens = self.get_current_lataccel(
                 inp[:, i:i+CONTEXT_LENGTH, :-1],
                 inp[:, i:i+CONTEXT_LENGTH, -1].to(torch.long),
@@ -119,6 +120,7 @@ class LightningModel(pl.LightningModule):
             )
             inp[:, [i+CONTEXT_LENGTH], -1] = predicted_tokens.to(torch.float32)
             inp[:, [i+CONTEXT_LENGTH], 0] = control
+        pbar.close()
         return inp[:, CONTEXT_LENGTH:, -1]
 
     def training_step(self, batch, *args, **kwargs) -> STEP_OUTPUT:
@@ -170,7 +172,6 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         max_epochs=10,
-        val_check_interval=250,
-        fast_dev_run=True,
+        val_check_interval=5,
     )
     trainer.fit(model, datamodule=data_module)
