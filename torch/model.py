@@ -7,9 +7,10 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch import nn
 from tqdm import trange
 
-from data import DataModule, FUTURE_PLAN_LENGTH
+from controllers.nn import FUTURE_PLAN_LENGTH
+from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
-    CONTROL_START_IDX, VOCAB_SIZE, FuturePlan, State
+    CONTROL_START_IDX, VOCAB_SIZE, State
 
 
 class ControlsModel(pl.LightningModule):

@@ -11,9 +11,8 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset
 
+from controllers.nn import FUTURE_PLAN_LENGTH
 from tinyphysics import DATASET_PATH, DATASET_URL, CONTEXT_LENGTH, CONTROL_START_IDX, COST_END_IDX
-
-FUTURE_PLAN_LENGTH = 20
 
 
 class LatAccelDataset(Dataset):
