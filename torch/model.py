@@ -30,13 +30,7 @@ class ControlsModel(pl.LightningModule):
     def forward(self, x, st):
         x = torch.cat([x, st], dim=-1)
         x = F.tanh(self.fc1(x))
-        x = self.bn1(x)
-        x = self.drop1(x)
-
         x = x + F.tanh(self.fc2(x))
-        x = self.bn2(x)
-        x = self.drop2(x)
-
         x = F.tanh(self.fc3(x))
         x, st = x.split([1, self.state_dim], dim=-1)
         return x, st
