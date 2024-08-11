@@ -67,7 +67,6 @@ class LightningModel(pl.LightningModule):
         self,
         states,
         tokens,
-        top_k: int = 4,
     ):
         assert states.ndim == 3
         assert tokens.ndim == 2
@@ -75,8 +74,6 @@ class LightningModel(pl.LightningModule):
         assert tokens.size(1) == states.size(1)
         logits = self.state_model(states, tokens)  # B x T x V
         logits = logits[:, -1, :]  # B x V
-        v, _ = torch.topk(logits, top_k, dim=-1)  # B x K
-        logits[logits < v[:, [-1]]] = -float("inf")
         probs = F.softmax(logits, dim=-1)  # B x V
         token = torch.multinomial(probs, 1)  # B x 1
         return token
