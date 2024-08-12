@@ -98,7 +98,7 @@ class LightningModel(pl.LightningModule):
 
     def rollout(self, inp):
         # mask controls
-        inp[:, CONTEXT_LENGTH:, 0] = 0
+        inp[:, CONTROL_START_IDX:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
         pbar = trange(COST_END_IDX - CONTEXT_LENGTH, desc="Rollout")
@@ -107,14 +107,16 @@ class LightningModel(pl.LightningModule):
                 inp[:, i:i+CONTEXT_LENGTH, :-1],
                 inp[:, i:i+CONTEXT_LENGTH, -1].to(torch.long),
             )
+            inp[:, [i+CONTEXT_LENGTH], -1] = predicted_tokens.to(torch.float32)
+            if i <= COST_END_IDX - CONTEXT_LENGTH:
+                continue
             control, st = self.controls_step(
                 target_lataccel=self.detokenize(predicted_tokens.to(torch.float32)),
                 current_lataccel=self.detokenize(inp[:, [i+CONTEXT_LENGTH-1], -1]),
                 state=inp[:, i+CONTEXT_LENGTH, 1:-1],
-                future_plan=inp[:, i+CONTEXT_LENGTH:i+CONTEXT_LENGTH+FUTURE_PLAN_LENGTH, 1:],
+                future_plan=inp[:, i+CONTEXT_LENGTH:i+CONTEXT_LENGTH+FUTURE_PLAN_LENGTH, 1:],  # TODO: check off-by-one
                 st=st,
             )
-            inp[:, [i+CONTEXT_LENGTH], -1] = predicted_tokens.to(torch.float32)
             inp[:, [i+CONTEXT_LENGTH], 0] = control
         pbar.close()
         return inp[:, CONTEXT_LENGTH:, -1]
