@@ -12,7 +12,7 @@ from tqdm import trange
 from controllers.nn import FUTURE_PLAN_LENGTH
 from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
-    CONTROL_START_IDX, VOCAB_SIZE, State
+    VOCAB_SIZE, State
 
 
 class ControlsModel(pl.LightningModule):
@@ -101,7 +101,7 @@ class LightningModel(pl.LightningModule):
         inp[:, CONTEXT_LENGTH:, 0] = 0
         inp[:, :, -1] = self.tokenize(inp[:, :, -1])
         st = torch.zeros(inp.size(0), self.controls_model.state_dim, dtype=torch.float32, device=self.device)
-        pbar = trange(COST_END_IDX - CONTROL_START_IDX, desc="Rollout")
+        pbar = trange(COST_END_IDX - CONTEXT_LENGTH, desc="Rollout")
         for i in pbar:
             predicted_tokens = self.get_current_lataccel(
                 inp[:, i:i+CONTEXT_LENGTH, :-1],

@@ -60,7 +60,7 @@ class DataModule(pl.LightningDataModule):
                 continue
             df = df[self.x_cols + [self.y_col]]
             df["roll"] = np.sin(df["roll"]) * 9.81
-            df = df.iloc[CONTROL_START_IDX - CONTEXT_LENGTH:COST_END_IDX + FUTURE_PLAN_LENGTH]
+            df = df.iloc[:COST_END_IDX + FUTURE_PLAN_LENGTH]
             # add batch dimension
             val = df.values[np.newaxis]
             segments.append(val)
