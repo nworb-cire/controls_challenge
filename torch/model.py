@@ -30,8 +30,8 @@ class ControlsModel(pl.LightningModule):
             nn.BatchNorm1d(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, out_dim + state_dim),
         )
@@ -168,6 +168,8 @@ if __name__ == "__main__":
     model = LightningModel("models/tinyphysics.onnx", ControlsModel())
 
     trainer = pl.Trainer(
-        max_epochs=10,
+        max_time="00:00:30:00",
+        val_check_interval=5,
     )
     trainer.fit(model, datamodule=data_module)
+    model.save()
