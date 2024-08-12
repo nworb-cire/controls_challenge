@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -169,7 +171,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         max_time="00:00:30:00",
-        val_check_interval=5,
+        fast_dev_run=bool(os.environ.get("DEV_RUN", False)),
     )
     trainer.fit(model, datamodule=data_module)
     model.save()
