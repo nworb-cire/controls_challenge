@@ -51,12 +51,14 @@ class LightningModel(pl.LightningModule):
         self,
         onnx_model_path: str,
         controls_model: torch.nn.Module,
+        lambda_l2: float = 1e-5
     ):
         super().__init__()
         self.state_model = convert(onnx_model_path)
         self.controls_model = controls_model
         bins = torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], VOCAB_SIZE), dtype=torch.float32)
         self.bins = nn.Parameter(bins, requires_grad=False)
+        self.lambda_l2 = lambda_l2
 
     def tokenize(self, value: torch.Tensor) -> torch.Tensor:
         value = torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
@@ -126,6 +128,7 @@ class LightningModel(pl.LightningModule):
         preds = self.rollout(batch)
         preds = self.detokenize_differentiable(preds)
         loss = self.loss_fn(preds, targets)
+        loss += self.lambda_l2 * sum(p.pow(2).sum() for p in self.controls_model.parameters())
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
@@ -173,6 +176,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         max_time="00:00:30:00",
+        gradient_clip_val=1.0,
         fast_dev_run=bool(os.environ.get("DEV_RUN", False)),
     )
     trainer.fit(model, datamodule=data_module)
