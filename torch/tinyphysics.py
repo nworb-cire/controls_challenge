@@ -16,7 +16,11 @@ from functools import partial
 from hashlib import md5
 from pathlib import Path
 from typing import List, Union, Tuple, Dict
+
+import torch
+from torch import nn
 from tqdm.contrib.concurrent import process_map
+import pytorch_lightning as pl
 
 from controllers import BaseController
 
@@ -44,20 +48,21 @@ DATASET_URL = "https://huggingface.co/datasets/commaai/commaSteeringControl/reso
 DATASET_PATH = Path(__file__).resolve().parent / "data"
 
 
-class LataccelTokenizer:
+class LataccelTokenizer(pl.LightningModule):
     def __init__(self):
+        super().__init__()
         self.vocab_size = VOCAB_SIZE
-        self.bins = np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size)
+        self.bins = nn.Parameter(
+            torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size)),
+            requires_grad=False
+        )
 
-    def encode(self, value: Union[float, np.ndarray, List[float]]) -> Union[int, np.ndarray]:
-        value = self.clip(value)
-        return np.digitize(value, self.bins, right=True)
+    def encode(self, value: torch.Tensor) -> torch.Tensor:
+        value = torch.clamp(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
+        return torch.bucketize(value, self.bins, right=True)
 
-    def decode(self, token: Union[int, np.ndarray]) -> Union[float, np.ndarray]:
-        return self.bins[token]
-
-    def clip(self, value: Union[float, np.ndarray, List[float]]) -> Union[float, np.ndarray]:
-        return np.clip(value, LATACCEL_RANGE[0], LATACCEL_RANGE[1])
+    def decode(self, token: torch.Tensor) -> torch.Tensor:
+        return self.bins[token.to(torch.long)]
 
 
 class TinyPhysicsModel:
