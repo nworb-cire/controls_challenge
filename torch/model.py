@@ -12,7 +12,7 @@ from tqdm import trange
 from controllers.nn import FUTURE_PLAN_LENGTH
 from data import DataModule
 from tinyphysics import DEL_T, LAT_ACCEL_COST_MULTIPLIER, LATACCEL_RANGE, run_rollout, CONTEXT_LENGTH, COST_END_IDX, \
-    VOCAB_SIZE, State
+    VOCAB_SIZE, State, CONTROL_START_IDX
 
 
 class ControlsModel(pl.LightningModule):
@@ -29,20 +29,18 @@ class ControlsModel(pl.LightningModule):
         self.network = nn.Sequential(
             nn.Linear(self.input_size + state_dim, hidden_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, out_dim + state_dim),
+            nn.Tanh(),
         )
 
     def forward(self, x, st):
         x = torch.cat([x, st], dim=-1)
         x = self.network(x)
         x, st = x.split([1, self.state_dim], dim=-1)
-        x = torch.clamp(x, -1, 1)
         return x, st
 
 
