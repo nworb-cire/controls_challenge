@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import List, Union, Tuple, Dict
 
 import torch
+from onnx2torch import convert
 from torch import nn
 from tqdm.contrib.concurrent import process_map
 import pytorch_lightning as pl
@@ -65,40 +66,33 @@ class LataccelTokenizer(pl.LightningModule):
         return self.bins[token.to(torch.long)]
 
 
-class TinyPhysicsModel:
+class TinyPhysicsModel(pl.LightningModule):
     def __init__(self, model_path: str, debug: bool) -> None:
+        super().__init__()
         self.tokenizer = LataccelTokenizer()
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = 1
-        options.inter_op_num_threads = 1
-        options.log_severity_level = 3
-        provider = 'CPUExecutionProvider'
+        self.model = convert(model_path)
 
-        with open(model_path, "rb") as f:
-            self.ort_session = ort.InferenceSession(f.read(), options, [provider])
-
-    def softmax(self, x, axis=-1):
-        e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
-        return e_x / np.sum(e_x, axis=axis, keepdims=True)
-
-    def predict(self, input_data: dict, temperature=1.) -> int:
-        res = self.ort_session.run(None, input_data)[0]
-        probs = self.softmax(res / temperature, axis=-1)
-        # we only care about the last timestep (batch size is just 1)
-        assert probs.shape[0] == 1
-        assert probs.shape[2] == VOCAB_SIZE
-        sample = np.random.choice(probs.shape[2], p=probs[0, -1])
+    def predict(self, states: torch.Tensor, tokens: torch.Tensor, temperature=1.) -> torch.Tensor:
+        assert states.ndim == 3
+        assert tokens.ndim == 2
+        assert tokens.size(0) == states.size(0)
+        assert tokens.size(1) == states.size(1)
+        logits = self.model(states, tokens)  # B x T x V
+        logits = logits[:, -1, :] / temperature  # B x V
+        probs = torch.softmax(logits, dim=-1)  # B x V
+        sample = torch.multinomial(probs, num_samples=1)  # B x 1
+        assert sample.size(0) == states.size(0)
+        assert sample.size(1) == 1
         return sample
 
-    def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
-        tokenized_actions = self.tokenizer.encode(past_preds)
+    def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: torch.Tensor) -> torch.Tensor:
         raw_states = [list(x) for x in sim_states]
-        states = np.column_stack([actions, raw_states])
-        input_data = {
-            'states': np.expand_dims(states, axis=0).astype(np.float32),
-            'tokens': np.expand_dims(tokenized_actions, axis=0).astype(np.int64)
-        }
-        return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
+        pred = self.predict(
+            states=torch.cat((actions, raw_states), dim=-1).unsqueeze(0),
+            tokens=self.tokenizer.encode(past_preds).unsqueeze(0),
+            temperature=0.8
+        )
+        return self.tokenizer.decode(pred)
 
 
 class TinyPhysicsSimulator:
