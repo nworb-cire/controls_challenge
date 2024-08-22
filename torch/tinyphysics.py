@@ -46,7 +46,7 @@ State = namedtuple('State', ['roll_lataccel', 'v_ego', 'a_ego'])
 FuturePlan = namedtuple('FuturePlan', ['lataccel', 'roll_lataccel', 'v_ego', 'a_ego'])
 
 DATASET_URL = "https://huggingface.co/datasets/commaai/commaSteeringControl/resolve/main/data/SYNTHETIC_V0.zip"
-DATASET_PATH = Path(__file__).resolve().parent / "data"
+DATASET_PATH = Path(__file__).resolve().parent.parent / "data"
 
 
 class LataccelTokenizer(pl.LightningModule):
@@ -94,9 +94,18 @@ class TinyPhysicsModel(pl.LightningModule):
         )
         return self.tokenizer.decode(pred)
 
+IDX = {
+    "roll_lataccel": 0,
+    "v_ego": 1,
+    "a_ego": 2,
+    "target_lataccel": 3,
+    "steer_command": 4
+}
 
-class TinyPhysicsSimulator:
+
+class TinyPhysicsSimulator(pl.LightningModule):
     def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False) -> None:
+        super().__init__()
         self.data_path = data_path
         self.sim_model = model
         self.data = self.get_data(data_path)
@@ -108,15 +117,15 @@ class TinyPhysicsSimulator:
         self.step_idx = CONTEXT_LENGTH
         state_target_futureplans = [self.get_state_target_futureplan(i) for i in range(self.step_idx)]
         self.state_history = [x[0] for x in state_target_futureplans]
-        self.action_history = self.data['steer_command'].values[:self.step_idx].tolist()
+        self.action_history = self.data[:, :self.step_idx, IDX['steer_command']]
         self.current_lataccel_history = [x[1] for x in state_target_futureplans]
         self.target_lataccel_history = [x[1] for x in state_target_futureplans]
         self.target_future = None
         self.current_lataccel = self.current_lataccel_history[-1]
         seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
-        np.random.seed(seed)
+        pl.seed_everything(seed)
 
-    def get_data(self, data_path: str) -> pd.DataFrame:
+    def get_data(self, data_path: str) -> torch.Tensor:
         df = pd.read_csv(data_path)
         processed_df = pd.DataFrame({
             'roll_lataccel': np.sin(df['roll'].values) * ACC_G,
@@ -125,7 +134,7 @@ class TinyPhysicsSimulator:
             'target_lataccel': df['targetLateralAcceleration'].values,
             'steer_command': -df['steerCommand'].values  # steer commands are logged with left-positive convention but this simulator uses right-positive
         })
-        return processed_df
+        return torch.tensor(processed_df.values, dtype=torch.float32).unsqueeze(0)
 
     def sim_step(self, step_idx: int) -> None:
         pred = self.sim_model.get_current_lataccel(
@@ -144,20 +153,20 @@ class TinyPhysicsSimulator:
     def control_step(self, step_idx: int) -> None:
         action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
         if step_idx < CONTROL_START_IDX:
-            action = self.data['steer_command'].values[step_idx]
+            action = self.data[:, step_idx, IDX['steer_command']]
         action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
         self.action_history.append(action)
 
-    def get_state_target_futureplan(self, step_idx: int) -> Tuple[State, float, FuturePlan]:
-        state = self.data.iloc[step_idx]
+    def get_state_target_futureplan(self, step_idx: int) -> Tuple[torch.Tensor, torch.Tensor, FuturePlan]:
+        state = self.data[:, step_idx, :]
         return (
-            State(roll_lataccel=state['roll_lataccel'], v_ego=state['v_ego'], a_ego=state['a_ego']),
-            state['target_lataccel'],
+            state[:, [IDX['roll_lataccel'], IDX['v_ego'], IDX['a_ego']]],
+            state[:, IDX['target_lataccel']],
             FuturePlan(
-                lataccel=self.data['target_lataccel'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-                roll_lataccel=self.data['roll_lataccel'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-                v_ego=self.data['v_ego'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-                a_ego=self.data['a_ego'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist()
+                lataccel=self.data[:, step_idx + 1:step_idx + FUTURE_PLAN_STEPS, IDX['target_lataccel']],
+                roll_lataccel=self.data[:, step_idx + 1:step_idx + FUTURE_PLAN_STEPS, IDX['roll_lataccel']],
+                v_ego=self.data[:, step_idx + 1:step_idx + FUTURE_PLAN_STEPS, IDX['v_ego']],
+                a_ego=self.data[:, step_idx + 1:step_idx + FUTURE_PLAN_STEPS, IDX['a_ego']]
             )
         )
 
