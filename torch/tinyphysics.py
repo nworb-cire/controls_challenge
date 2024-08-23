@@ -192,11 +192,11 @@ class TinyPhysicsSimulator(pl.LightningModule):
         ax.set_ylabel(axis_labels[1])
 
     def compute_cost(self) -> dict[str, float]:
-        target = np.array(self.target_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
-        pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
+        target = self.target_lataccel_history[:, CONTROL_START_IDX:COST_END_IDX]
+        pred = self.current_lataccel_history[:, CONTROL_START_IDX:COST_END_IDX]
 
-        lat_accel_cost = np.mean((target - pred)**2) * 100
-        jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100
+        lat_accel_cost = torch.mean((target - pred)**2, dim=-1) * 100
+        jerk_cost = torch.mean(((pred[:, 1:] - pred[:, :-1]) / DEL_T)**2, dim=-1) * 100
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
         return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
