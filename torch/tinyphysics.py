@@ -88,7 +88,7 @@ class TinyPhysicsModel(pl.LightningModule):
     def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: torch.Tensor) -> torch.Tensor:
         raw_states = [list(x) for x in sim_states]
         pred = self.predict(
-            states=torch.cat((actions, raw_states), dim=-1).unsqueeze(0),
+            states=torch.cat((actions, *raw_states), dim=-1).unsqueeze(0),
             tokens=self.tokenizer.encode(past_preds).unsqueeze(0),
             temperature=0.8
         )
@@ -116,12 +116,12 @@ class TinyPhysicsSimulator(pl.LightningModule):
     def reset(self) -> None:
         self.step_idx = CONTEXT_LENGTH
         state_target_futureplans = [self.get_state_target_futureplan(i) for i in range(self.step_idx)]
-        self.state_history = [x[0] for x in state_target_futureplans]
+        self.state_history = torch.cat([x[0].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
         self.action_history = self.data[:, :self.step_idx, IDX['steer_command']]
-        self.current_lataccel_history = [x[1] for x in state_target_futureplans]
-        self.target_lataccel_history = [x[1] for x in state_target_futureplans]
+        self.current_lataccel_history = torch.cat([x[1].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
+        self.target_lataccel_history = torch.cat([x[1].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
         self.target_future = None
-        self.current_lataccel = self.current_lataccel_history[-1]
+        self.current_lataccel = self.current_lataccel_history[:, -1]
         seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
         pl.seed_everything(seed)
 
@@ -139,7 +139,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
     def sim_step(self, step_idx: int) -> None:
         pred = self.sim_model.get_current_lataccel(
             sim_states=self.state_history[-CONTEXT_LENGTH:],
-            actions=self.action_history[-CONTEXT_LENGTH:],
+            actions=self.action_history[:, -CONTEXT_LENGTH:],
             past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
         )
         pred = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
@@ -151,11 +151,16 @@ class TinyPhysicsSimulator(pl.LightningModule):
         self.current_lataccel_history.append(self.current_lataccel)
 
     def control_step(self, step_idx: int) -> None:
-        action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
+        action = self.controller.update(
+            self.target_lataccel_history[:, step_idx],
+            self.current_lataccel,
+            self.state_history[:, :, step_idx],
+            future_plan=self.futureplan
+        )
         if step_idx < CONTROL_START_IDX:
             action = self.data[:, step_idx, IDX['steer_command']]
-        action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
-        self.action_history.append(action)
+        action = torch.clamp(action, STEER_RANGE[0], STEER_RANGE[1])
+        self.action_history = torch.cat((self.action_history, action.unsqueeze(-1)), dim=-1)
 
     def get_state_target_futureplan(self, step_idx: int) -> Tuple[torch.Tensor, torch.Tensor, FuturePlan]:
         state = self.data[:, step_idx, :]
@@ -172,8 +177,8 @@ class TinyPhysicsSimulator(pl.LightningModule):
 
     def step(self) -> None:
         state, target, futureplan = self.get_state_target_futureplan(self.step_idx)
-        self.state_history.append(state)
-        self.target_lataccel_history.append(target)
+        self.state_history = torch.cat((self.state_history, state.unsqueeze(-1)), dim=-1)
+        self.target_lataccel_history = torch.cat((self.target_lataccel_history, target.unsqueeze(-1)), dim=-1)
         self.futureplan = futureplan
         self.control_step(self.step_idx)
         self.sim_step(self.step_idx)
@@ -203,7 +208,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
             plt.ion()
             fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
-        for _ in range(CONTEXT_LENGTH, len(self.data)):
+        for _ in range(CONTEXT_LENGTH, self.data.size(1)):
             self.step()
             if self.debug and self.step_idx % 10 == 0:
                 print(f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, Target lataccel: {self.target_lataccel_history[-1]:>6.2f}")
@@ -256,7 +261,7 @@ if __name__ == "__main__":
 
     data_path = Path(args.data_path)
     if data_path.is_file():
-        cost, _, _ = run_rollout(data_path, args.controller, args.model_path, debug=args.debug)
+        cost, _, _ = run_rollout(data_path, args.controller, args.model_path, debug=False)
         print(f"\nAverage lataccel_cost: {cost['lataccel_cost']:>6.4}, average jerk_cost: {cost['jerk_cost']:>6.4}, average total_cost: {cost['total_cost']:>6.4}")
     elif data_path.is_dir():
         run_rollout_partial = partial(run_rollout, controller_type=args.controller, model_path=args.model_path, debug=False)
