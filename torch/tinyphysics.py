@@ -1,4 +1,3 @@
-import argparse
 import importlib
 import numpy as np
 import os
@@ -11,14 +10,11 @@ import zipfile
 
 from io import BytesIO
 from collections import namedtuple
-from functools import partial
-from hashlib import md5
 from pathlib import Path
 
 import torch
 from onnx2torch import convert
 from torch import nn
-from tqdm.contrib.concurrent import process_map
 import pytorch_lightning as pl
 
 from controllers import BaseController
@@ -100,6 +96,18 @@ IDX = {
 }
 
 
+def get_data(data_path: str) -> torch.Tensor:
+    df = pd.read_csv(data_path)
+    processed_df = pd.DataFrame({
+        'roll_lataccel': np.sin(df['roll'].values) * ACC_G,
+        'v_ego': df['vEgo'].values,
+        'a_ego': df['aEgo'].values,
+        'target_lataccel': df['targetLateralAcceleration'].values,
+        'steer_command': -df['steerCommand'].values  # steer commands are logged with left-positive convention but this simulator uses right-positive
+    })
+    return torch.tensor(processed_df.values, dtype=torch.float32).unsqueeze(0)
+
+
 class TinyPhysicsSimulator(pl.LightningModule):
     def __init__(self, model: TinyPhysicsModel, controller: BaseController, debug: bool = False) -> None:
         super().__init__()
@@ -116,17 +124,6 @@ class TinyPhysicsSimulator(pl.LightningModule):
         self.target_lataccel_history = torch.cat([x[1].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
         self.target_future = None
         self.current_lataccel = self.current_lataccel_history[:, -1]
-
-    def get_data(self, data_path: str) -> torch.Tensor:
-        df = pd.read_csv(data_path)
-        processed_df = pd.DataFrame({
-            'roll_lataccel': np.sin(df['roll'].values) * ACC_G,
-            'v_ego': df['vEgo'].values,
-            'a_ego': df['aEgo'].values,
-            'target_lataccel': df['targetLateralAcceleration'].values,
-            'steer_command': -df['steerCommand'].values  # steer commands are logged with left-positive convention but this simulator uses right-positive
-        })
-        return torch.tensor(processed_df.values, dtype=torch.float32).unsqueeze(0)
 
     def sim_step(self, step_idx: int) -> None:
         pred = self.sim_model.get_current_lataccel(
@@ -215,6 +212,21 @@ class TinyPhysicsSimulator(pl.LightningModule):
             plt.show()
         return self.compute_cost()
 
+    def get_loss(self, batch):
+        self.data = batch
+        self.reset()
+        for _ in range(CONTEXT_LENGTH, self.data.size(1)):
+            self.step()
+        return self.compute_cost()["total_cost"]
+
+    def training_step(self, batch, batch_idx):
+        loss = self.get_loss(batch)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.controller.model.parameters(), lr=1e-3)
+
 
 def get_available_controllers():
     return [f.stem for f in Path('controllers').iterdir() if f.is_file() and f.suffix == '.py' and f.stem != '__init__']
@@ -224,7 +236,7 @@ def run_rollout(data_paths, controller_type, model_path, debug=False):
     tinyphysicsmodel = TinyPhysicsModel(model_path, debug=debug)
     controller = importlib.import_module(f'controllers.{controller_type}').Controller()
     sim = TinyPhysicsSimulator(tinyphysicsmodel, controller=controller, debug=debug)
-    sim.data = sim.get_data(data_paths[0])
+    sim.data = get_data(data_paths[0])
     sim.reset()
     return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
@@ -240,34 +252,33 @@ def download_dataset():
                         dest.write(src.read())
 
 
+class DataModule(pl.LightningDataModule):
+    def setup(self, stage: str) -> None:
+        files = list(Path(DATASET_PATH).glob('000*.csv'))
+        ts = []
+        for f in files:
+            tensor = get_data(f)[:, :600, :]
+            # pad to 600
+            pad = torch.zeros((1, 600 - tensor.size(1), tensor.size(2)))
+            ts.append(torch.cat([tensor, pad], dim=1))
+        self.data = torch.cat(ts, dim=0)
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.data, batch_size=16, shuffle=True)
+
+
 if __name__ == "__main__":
-    available_controllers = get_available_controllers()
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True)
-    parser.add_argument("--data_path", type=str, required=True)
-    parser.add_argument("--num_segs", type=int, default=100)
-    parser.add_argument("--debug", action='store_true')
-    parser.add_argument("--controller", default='pid', choices=available_controllers)
-    args = parser.parse_args()
+    data_module = DataModule()
+    controller = importlib.import_module('controllers.nn_train').Controller(batch_size=16)
+    controller.model.save()
+    controller.model.to("mps")  # fixme
 
-    if not DATASET_PATH.exists():
-        download_dataset()
+    tinyphysicsmodel = TinyPhysicsModel("models/tinyphysics.onnx", debug=False)
+    sim = TinyPhysicsSimulator(tinyphysicsmodel, controller=controller)
 
-    data_path = Path(args.data_path)
-    if data_path.is_file():
-        cost, _, _ = run_rollout([data_path], args.controller, args.model_path, debug=False)
-        print(f"\nAverage lataccel_cost: {cost['lataccel_cost']:>6.4}, average jerk_cost: {cost['jerk_cost']:>6.4}, average total_cost: {cost['total_cost']:>6.4}")
-    elif data_path.is_dir():
-        run_rollout_partial = partial(run_rollout, controller_type=args.controller, model_path=args.model_path, debug=False)
-        files = sorted(data_path.iterdir())[:args.num_segs]
-        results = process_map(run_rollout_partial, files, max_workers=16, chunksize=10)
-        costs = [result[0] for result in results]
-        costs_df = pd.DataFrame(costs)
-        print(f"\nAverage lataccel_cost: {np.mean(costs_df['lataccel_cost']):>6.4}, average jerk_cost: {np.mean(costs_df['jerk_cost']):>6.4}, average total_cost: {np.mean(costs_df['total_cost']):>6.4}")
-        for cost in costs_df.columns:
-            plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)
-        plt.xlabel('costs')
-        plt.ylabel('Frequency')
-        plt.title('costs Distribution')
-        plt.legend()
-        plt.show()
+    trainer = pl.Trainer(
+        max_epochs=1,
+        fast_dev_run=True,
+    )
+    trainer.fit(sim, datamodule=data_module)
+    controller.model.save()
