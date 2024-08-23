@@ -101,14 +101,11 @@ IDX = {
 
 
 class TinyPhysicsSimulator(pl.LightningModule):
-    def __init__(self, model: TinyPhysicsModel, data_paths: list[str], controller: BaseController, debug: bool = False) -> None:
+    def __init__(self, model: TinyPhysicsModel, controller: BaseController, debug: bool = False) -> None:
         super().__init__()
-        self.data_paths = data_paths
         self.sim_model = model
-        self.data = torch.cat([self.get_data(data_path) for data_path in data_paths], dim=0)
         self.controller = controller
         self.debug = debug
-        self.reset()
 
     def reset(self) -> None:
         self.step_idx = CONTEXT_LENGTH
@@ -119,8 +116,6 @@ class TinyPhysicsSimulator(pl.LightningModule):
         self.target_lataccel_history = torch.cat([x[1].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
         self.target_future = None
         self.current_lataccel = self.current_lataccel_history[:, -1]
-        seed = int(md5(str(self.data_paths[0]).encode()).hexdigest(), 16) % 10**4
-        pl.seed_everything(seed)
 
     def get_data(self, data_path: str) -> torch.Tensor:
         df = pd.read_csv(data_path)
@@ -228,7 +223,9 @@ def get_available_controllers():
 def run_rollout(data_paths, controller_type, model_path, debug=False):
     tinyphysicsmodel = TinyPhysicsModel(model_path, debug=debug)
     controller = importlib.import_module(f'controllers.{controller_type}').Controller()
-    sim = TinyPhysicsSimulator(tinyphysicsmodel, data_paths, controller=controller, debug=debug)
+    sim = TinyPhysicsSimulator(tinyphysicsmodel, controller=controller, debug=debug)
+    sim.data = sim.get_data(data_paths[0])
+    sim.reset()
     return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
 
