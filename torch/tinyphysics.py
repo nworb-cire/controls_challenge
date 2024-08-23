@@ -52,7 +52,7 @@ class LataccelTokenizer(pl.LightningModule):
         super().__init__()
         self.vocab_size = VOCAB_SIZE
         self.bins = nn.Parameter(
-            torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size)),
+            torch.tensor(np.linspace(LATACCEL_RANGE[0], LATACCEL_RANGE[1], self.vocab_size), dtype=torch.float32),
             requires_grad=False
         )
 
