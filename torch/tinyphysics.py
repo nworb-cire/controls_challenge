@@ -83,13 +83,12 @@ class TinyPhysicsModel(pl.LightningModule):
         sample = torch.multinomial(probs, num_samples=1)  # B x 1
         assert sample.size(0) == states.size(0)
         assert sample.size(1) == 1
-        return sample
+        return sample[:, 0]
 
-    def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: torch.Tensor) -> torch.Tensor:
-        raw_states = [list(x) for x in sim_states]
+    def get_current_lataccel(self, sim_states: torch.Tensor, actions: torch.Tensor, past_preds: torch.Tensor) -> torch.Tensor:
         pred = self.predict(
-            states=torch.cat((actions, *raw_states), dim=-1).unsqueeze(0),
-            tokens=self.tokenizer.encode(past_preds).unsqueeze(0),
+            states=torch.cat((actions.unsqueeze(1), sim_states[:, :, -CONTEXT_LENGTH:]), dim=1).permute(0, 2, 1),
+            tokens=self.tokenizer.encode(past_preds[:, -CONTEXT_LENGTH:]),
             temperature=0.8
         )
         return self.tokenizer.decode(pred)
@@ -142,13 +141,13 @@ class TinyPhysicsSimulator(pl.LightningModule):
             actions=self.action_history[:, -CONTEXT_LENGTH:],
             past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
         )
-        pred = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
+        pred = torch.clamp(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
         if step_idx >= CONTROL_START_IDX:
             self.current_lataccel = pred
         else:
             self.current_lataccel = self.get_state_target_futureplan(step_idx)[1]
 
-        self.current_lataccel_history.append(self.current_lataccel)
+        self.current_lataccel_history = torch.cat((self.current_lataccel_history, pred.unsqueeze(-1)), dim=-1)
 
     def control_step(self, step_idx: int) -> None:
         action = self.controller.update(
