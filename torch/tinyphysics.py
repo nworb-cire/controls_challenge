@@ -101,11 +101,11 @@ IDX = {
 
 
 class TinyPhysicsSimulator(pl.LightningModule):
-    def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False) -> None:
+    def __init__(self, model: TinyPhysicsModel, data_paths: list[str], controller: BaseController, debug: bool = False) -> None:
         super().__init__()
-        self.data_path = data_path
+        self.data_paths = data_paths
         self.sim_model = model
-        self.data = self.get_data(data_path)
+        self.data = torch.cat([self.get_data(data_path) for data_path in data_paths], dim=0)
         self.controller = controller
         self.debug = debug
         self.reset()
@@ -119,7 +119,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         self.target_lataccel_history = torch.cat([x[1].unsqueeze(-1) for x in state_target_futureplans], dim=-1)
         self.target_future = None
         self.current_lataccel = self.current_lataccel_history[:, -1]
-        seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
+        seed = int(md5(str(self.data_paths[0]).encode()).hexdigest(), 16) % 10**4
         pl.seed_everything(seed)
 
     def get_data(self, data_path: str) -> torch.Tensor:
@@ -225,10 +225,10 @@ def get_available_controllers():
     return [f.stem for f in Path('controllers').iterdir() if f.is_file() and f.suffix == '.py' and f.stem != '__init__']
 
 
-def run_rollout(data_path, controller_type, model_path, debug=False):
+def run_rollout(data_paths, controller_type, model_path, debug=False):
     tinyphysicsmodel = TinyPhysicsModel(model_path, debug=debug)
     controller = importlib.import_module(f'controllers.{controller_type}').Controller()
-    sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_path), controller=controller, debug=debug)
+    sim = TinyPhysicsSimulator(tinyphysicsmodel, data_paths, controller=controller, debug=debug)
     return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
 
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 
     data_path = Path(args.data_path)
     if data_path.is_file():
-        cost, _, _ = run_rollout(data_path, args.controller, args.model_path, debug=False)
+        cost, _, _ = run_rollout([data_path], args.controller, args.model_path, debug=False)
         print(f"\nAverage lataccel_cost: {cost['lataccel_cost']:>6.4}, average jerk_cost: {cost['jerk_cost']:>6.4}, average total_cost: {cost['total_cost']:>6.4}")
     elif data_path.is_dir():
         run_rollout_partial = partial(run_rollout, controller_type=args.controller, model_path=args.model_path, debug=False)
