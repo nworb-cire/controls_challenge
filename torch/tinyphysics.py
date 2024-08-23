@@ -1,7 +1,6 @@
 import argparse
 import importlib
 import numpy as np
-import onnxruntime as ort
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,7 +14,6 @@ from collections import namedtuple
 from functools import partial
 from hashlib import md5
 from pathlib import Path
-from typing import List, Union, Tuple, Dict
 
 import torch
 from onnx2torch import convert
@@ -161,7 +159,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         action = torch.clamp(action, STEER_RANGE[0], STEER_RANGE[1])
         self.action_history = torch.cat((self.action_history, action.unsqueeze(-1)), dim=-1)
 
-    def get_state_target_futureplan(self, step_idx: int) -> Tuple[torch.Tensor, torch.Tensor, FuturePlan]:
+    def get_state_target_futureplan(self, step_idx: int) -> tuple[torch.Tensor, torch.Tensor, FuturePlan]:
         state = self.data[:, step_idx, :]
         return (
             state[:, [IDX['roll_lataccel'], IDX['v_ego'], IDX['a_ego']]],
@@ -193,7 +191,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         ax.set_xlabel(axis_labels[0])
         ax.set_ylabel(axis_labels[1])
 
-    def compute_cost(self) -> Dict[str, float]:
+    def compute_cost(self) -> dict[str, float]:
         target = np.array(self.target_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
         pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
 
@@ -202,7 +200,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
         return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
-    def rollout(self) -> Dict[str, float]:
+    def rollout(self) -> dict[str, float]:
         if self.debug:
             plt.ion()
             fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
