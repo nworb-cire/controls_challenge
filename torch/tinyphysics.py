@@ -16,6 +16,7 @@ import torch
 from onnx2torch import convert
 from torch import nn
 import pytorch_lightning as pl
+from tqdm import trange
 
 from controllers import BaseController
 
@@ -215,9 +216,9 @@ class TinyPhysicsSimulator(pl.LightningModule):
     def get_loss(self, batch):
         self.data = batch
         self.reset()
-        for _ in range(CONTEXT_LENGTH, self.data.size(1)):
+        for _ in trange(CONTEXT_LENGTH, self.data.size(1)):
             self.step()
-        return self.compute_cost()["total_cost"]
+        return self.compute_cost()["total_cost"].mean()
 
     def training_step(self, batch, batch_idx):
         loss = self.get_loss(batch)
