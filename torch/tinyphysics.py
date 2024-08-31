@@ -184,7 +184,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         ax.set_xlabel(axis_labels[0])
         ax.set_ylabel(axis_labels[1])
 
-    def compute_cost(self) -> dict[str, float]:
+    def compute_cost(self) -> dict[str, torch.Tensor]:
         target = self.target_lataccel_history[:, CONTROL_START_IDX:COST_END_IDX]
         pred = self.current_lataccel_history[:, CONTROL_START_IDX:COST_END_IDX]
 
@@ -193,7 +193,7 @@ class TinyPhysicsSimulator(pl.LightningModule):
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
         return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
-    def rollout(self) -> dict[str, float]:
+    def rollout(self) -> dict[str, torch.Tensor]:
         if self.debug:
             plt.ion()
             fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
